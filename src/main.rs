@@ -10,7 +10,7 @@ mod input;
 mod layouts;
 mod ui;
 
-use hotkeys::{Hotkey, HotkeyAction, HotkeyBinding, Modifiers};
+use config::Config;
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
@@ -35,35 +35,17 @@ fn main() {
         eprintln!("  - {} (0x{:04X})", layout.name, layout.lang_id);
     }
 
-    // Test hotkeys: LCtrl = English, RCtrl = Ukrainian, Russian has no binding.
-    let bindings = vec![
-        HotkeyBinding {
-            hotkey: Hotkey {
-                vk: 0xA2, // VK_LCONTROL
-                modifiers: Modifiers::NONE,
-            },
-            action: HotkeyAction::SwitchLayout(0x0409), // English
-        },
-        HotkeyBinding {
-            hotkey: Hotkey {
-                vk: 0xA3, // VK_RCONTROL
-                modifiers: Modifiers::NONE,
-            },
-            action: HotkeyAction::SwitchLayout(0x0422), // Ukrainian
-        },
-        HotkeyBinding {
-            hotkey: Hotkey {
-                vk: 0x13, // VK_PAUSE (Pause/Break)
-                modifiers: Modifiers::NONE,
-            },
-            action: HotkeyAction::ConvertText,
-        },
-    ];
-    eprintln!("Test hotkeys:");
-    eprintln!("  LCtrl (tap) -> English (0x0409)");
-    eprintln!("  RCtrl (tap) -> Українська (0x0422)");
-    eprintln!("  Pause/Break -> Convert text");
-    eprintln!("  Русский -> no binding");
+    // Load config and apply hotkey bindings
+    let config = Config::load();
+    let bindings = config.to_bindings();
+    if bindings.is_empty() {
+        eprintln!("[init] No hotkey bindings configured. Open Settings to set them up.");
+    } else {
+        eprintln!("[init] Loaded {} hotkey binding(s):", bindings.len());
+        for b in &bindings {
+            eprintln!("  {} -> {:?}", b.hotkey, b.action);
+        }
+    }
     hotkeys::set_bindings(bindings);
 
     match hooks::install_hook() {
@@ -212,7 +194,7 @@ unsafe extern "system" fn wnd_proc(
             if event == WM_RBUTTONUP {
                 show_tray_context_menu(hwnd);
             } else if event == WM_LBUTTONDBLCLK {
-                eprintln!("[tray] Double-click — settings will open here");
+                ui::show_settings();
             }
             LRESULT(0)
         }
@@ -220,7 +202,7 @@ unsafe extern "system" fn wnd_proc(
             let id = (wparam.0 & 0xFFFF) as u16;
             match id {
                 IDM_SETTINGS => {
-                    eprintln!("[menu] Settings clicked");
+                    ui::show_settings();
                 }
                 IDM_EXIT => {
                     unsafe { DestroyWindow(hwnd).unwrap() };

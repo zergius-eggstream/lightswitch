@@ -14,6 +14,12 @@ use std::sync::Mutex;
 
 static HOOK_HANDLE: Mutex<Option<isize>> = Mutex::new(None);
 static MAIN_HWND: Mutex<Option<isize>> = Mutex::new(None);
+static HOOK_SUSPENDED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Suspends hook processing (e.g. while settings window captures a hotkey).
+pub fn set_suspended(suspended: bool) {
+    HOOK_SUSPENDED.store(suspended, std::sync::atomic::Ordering::Relaxed);
+}
 
 /// Tracks state for standalone modifier detection.
 /// When a modifier key is pressed, we record its VK.
@@ -96,6 +102,11 @@ unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARA
         let msg = wparam.0 as u32;
         let kb_struct = unsafe { &*(lparam.0 as *const KBDLLHOOKSTRUCT) };
         let vk = kb_struct.vkCode as u16;
+
+        // Skip processing when hook is suspended (e.g. settings capturing a hotkey).
+        if HOOK_SUSPENDED.load(std::sync::atomic::Ordering::Relaxed) {
+            return unsafe { CallNextHookEx(None, code, wparam, lparam) };
+        }
 
         // Skip injected input (our own SendInput calls) to avoid recursion.
         if (kb_struct.flags.0 & LLKHF_INJECTED.0) != 0 {
