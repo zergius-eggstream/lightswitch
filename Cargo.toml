@@ -1,0 +1,30 @@
+[package]
+name = "lightswitch"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies.windows]
+version = "0.61"
+features = [
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_System_LibraryLoader",
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_System_DataExchange",   # Clipboard
+    "Win32_System_Memory",         # GlobalAlloc for clipboard
+    "Win32_System_Ole",            # CF_UNICODETEXT
+    "Win32_System_Registry",       # Autostart
+    "Win32_Globalization",         # GetLocaleInfoW
+]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+
+[profile.release]
+opt-level = "s"     # Optimize for size
+lto = true          # Link-time optimization
+strip = true        # Strip debug symbols
+codegen-units = 1   # Better optimization

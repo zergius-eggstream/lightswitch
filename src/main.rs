@@ -1,0 +1,188 @@
+#![windows_subsystem = "windows"]
+
+mod clipboard;
+mod config;
+mod conversion;
+mod hooks;
+mod hotkeys;
+mod layouts;
+mod ui;
+
+use windows::core::{w, PCWSTR};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::UI::Shell::{
+    Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NOTIFYICONDATAW,
+};
+use windows::Win32::UI::WindowsAndMessaging::{
+    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW, LoadImageW,
+    PostQuitMessage, RegisterClassW, TranslateMessage, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT,
+    HICON, IMAGE_ICON, LR_DEFAULTSIZE, LR_SHARED, MSG, WM_COMMAND, WM_DESTROY, WM_USER,
+    WNDCLASSW, WS_OVERLAPPEDWINDOW,
+};
+
+const WM_TRAY_ICON: u32 = WM_USER + 1;
+const IDM_SETTINGS: u16 = 1001;
+const IDM_EXIT: u16 = 1002;
+
+fn main() {
+    let installed = layouts::get_installed_layouts();
+    eprintln!("Detected {} keyboard layout(s):", installed.len());
+    for layout in &installed {
+        eprintln!("  - {} (0x{:04X})", layout.name, layout.lang_id);
+    }
+
+    match hooks::install_hook() {
+        Ok(_) => eprintln!("[init] Keyboard hook installed"),
+        Err(e) => eprintln!("[init] Failed to install hook: {}", e),
+    }
+
+    unsafe {
+        let hinstance = GetModuleHandleW(None).unwrap();
+
+        let class_name = w!("LightSwitchClass");
+        let wc = WNDCLASSW {
+            style: CS_HREDRAW | CS_VREDRAW,
+            lpfnWndProc: Some(wnd_proc),
+            hInstance: hinstance.into(),
+            lpszClassName: class_name,
+            ..Default::default()
+        };
+        RegisterClassW(&wc);
+
+        let hwnd = CreateWindowExW(
+            Default::default(),
+            class_name,
+            w!("LightSwitch"),
+            WS_OVERLAPPEDWINDOW,
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            None,
+            None,
+            Some(hinstance.into()),
+            None,
+        )
+        .unwrap();
+
+        add_tray_icon(hwnd);
+
+        let mut msg = MSG::default();
+        while GetMessageW(&mut msg, None, 0, 0).as_bool() {
+            let _ = TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+
+        remove_tray_icon(hwnd);
+        hooks::uninstall_hook();
+    }
+}
+
+fn add_tray_icon(hwnd: HWND) {
+    let hicon = load_default_icon();
+
+    let mut nid = NOTIFYICONDATAW {
+        cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
+        hWnd: hwnd,
+        uID: 1,
+        uFlags: NIF_ICON | NIF_MESSAGE | NIF_TIP,
+        uCallbackMessage: WM_TRAY_ICON,
+        hIcon: hicon,
+        ..Default::default()
+    };
+
+    let tip = "LightSwitch";
+    for (i, ch) in tip.encode_utf16().enumerate() {
+        if i >= nid.szTip.len() - 1 {
+            break;
+        }
+        nid.szTip[i] = ch;
+    }
+
+    unsafe { Shell_NotifyIconW(NIM_ADD, &nid) };
+}
+
+fn remove_tray_icon(hwnd: HWND) {
+    let nid = NOTIFYICONDATAW {
+        cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
+        hWnd: hwnd,
+        uID: 1,
+        ..Default::default()
+    };
+    unsafe { Shell_NotifyIconW(NIM_DELETE, &nid) };
+}
+
+fn load_default_icon() -> HICON {
+    let h = unsafe {
+        LoadImageW(
+            None,
+            PCWSTR(32512 as *const u16), // IDI_APPLICATION
+            IMAGE_ICON,
+            0,
+            0,
+            LR_SHARED | LR_DEFAULTSIZE,
+        )
+    };
+    match h {
+        Ok(h) => HICON(h.0),
+        Err(_) => HICON::default(),
+    }
+}
+
+fn show_tray_context_menu(hwnd: HWND) {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        AppendMenuW, CreatePopupMenu, GetCursorPos, SetForegroundWindow, TrackPopupMenu,
+        MF_STRING, TPM_BOTTOMALIGN, TPM_LEFTALIGN,
+    };
+
+    unsafe {
+        let menu = CreatePopupMenu().unwrap();
+        AppendMenuW(menu, MF_STRING, IDM_SETTINGS as usize, w!("Settings...")).unwrap();
+        AppendMenuW(menu, MF_STRING, IDM_EXIT as usize, w!("Exit")).unwrap();
+
+        let mut pt = Default::default();
+        GetCursorPos(&mut pt).unwrap();
+
+        SetForegroundWindow(hwnd);
+        TrackPopupMenu(menu, TPM_LEFTALIGN | TPM_BOTTOMALIGN, pt.x, pt.y, Some(0), hwnd, None);
+    }
+}
+
+unsafe extern "system" fn wnd_proc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    match msg {
+        WM_TRAY_ICON => {
+            let event = (lparam.0 & 0xFFFF) as u32;
+            use windows::Win32::UI::WindowsAndMessaging::{WM_LBUTTONDBLCLK, WM_RBUTTONUP};
+            if event == WM_RBUTTONUP {
+                show_tray_context_menu(hwnd);
+            } else if event == WM_LBUTTONDBLCLK {
+                eprintln!("[tray] Double-click — settings will open here");
+            }
+            LRESULT(0)
+        }
+        WM_COMMAND => {
+            let id = (wparam.0 & 0xFFFF) as u16;
+            match id {
+                IDM_SETTINGS => {
+                    eprintln!("[menu] Settings clicked");
+                }
+                IDM_EXIT => {
+                    unsafe { DestroyWindow(hwnd).unwrap() };
+                }
+                _ => {}
+            }
+            LRESULT(0)
+        }
+        WM_DESTROY => {
+            unsafe { PostQuitMessage(0) };
+            LRESULT(0)
+        }
+        _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
+    }
+}
