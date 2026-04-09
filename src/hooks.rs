@@ -5,7 +5,8 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, PostMessageW, SetWindowsHookExW, UnhookWindowsHookEx, HHOOK,
-    KBDLLHOOKSTRUCT, WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
+    KBDLLHOOKSTRUCT, LLKHF_INJECTED, WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN,
+    WM_SYSKEYUP,
 };
 
 use crate::hotkeys::{self, Modifiers};
@@ -95,6 +96,11 @@ unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARA
         let msg = wparam.0 as u32;
         let kb_struct = unsafe { &*(lparam.0 as *const KBDLLHOOKSTRUCT) };
         let vk = kb_struct.vkCode as u16;
+
+        // Skip injected input (our own SendInput calls) to avoid recursion.
+        if (kb_struct.flags.0 & LLKHF_INJECTED.0) != 0 {
+            return unsafe { CallNextHookEx(None, code, wparam, lparam) };
+        }
 
         match msg {
             WM_KEYDOWN | WM_SYSKEYDOWN => {

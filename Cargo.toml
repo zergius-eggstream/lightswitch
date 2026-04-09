@@ -17,6 +17,7 @@ features = [
     "Win32_System_Ole",            # CF_UNICODETEXT
     "Win32_System_Registry",       # Autostart
     "Win32_Globalization",         # GetLocaleInfoW
+    "Win32_UI_TextServices",       # GetForegroundWindow thread layout
 ]
 
 [dependencies]

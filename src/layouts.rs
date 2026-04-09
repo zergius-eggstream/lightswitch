@@ -1,6 +1,10 @@
 use windows::Win32::Foundation::HWND;
-use windows::Win32::UI::Input::KeyboardAndMouse::{ActivateKeyboardLayout, GetKeyboardLayoutList, HKL, KLF_SETFORPROCESS};
-use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, PostMessageW, WM_INPUTLANGCHANGEREQUEST};
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    ActivateKeyboardLayout, GetKeyboardLayoutList, GetKeyboardLayout, HKL, KLF_SETFORPROCESS,
+};
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetForegroundWindow, GetWindowThreadProcessId, PostMessageW, WM_INPUTLANGCHANGEREQUEST,
+};
 
 /// Represents an installed keyboard layout.
 #[derive(Debug, Clone)]
@@ -69,6 +73,21 @@ pub fn switch_layout(lang_id: u16) -> bool {
             true
         }
     }
+}
+
+/// Returns the current keyboard layout lang_id of the foreground window.
+pub fn get_current_layout() -> u16 {
+    unsafe {
+        let fg = GetForegroundWindow();
+        let thread_id = GetWindowThreadProcessId(fg, None);
+        let hkl = GetKeyboardLayout(thread_id);
+        (hkl.0 as usize & 0xFFFF) as u16
+    }
+}
+
+/// Returns ordered list of installed layout lang_ids.
+pub fn get_layout_order() -> Vec<u16> {
+    get_installed_layouts().iter().map(|l| l.lang_id).collect()
 }
 
 /// Maps a language ID to a human-readable name.

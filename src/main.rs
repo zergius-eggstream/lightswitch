@@ -1,10 +1,12 @@
-#![windows_subsystem = "windows"]
+// Use "windows" subsystem in release to hide console, "console" in debug for logging.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod clipboard;
 mod config;
 mod conversion;
 mod hooks;
 mod hotkeys;
+mod input;
 mod layouts;
 mod ui;
 
@@ -49,10 +51,18 @@ fn main() {
             },
             action: HotkeyAction::SwitchLayout(0x0422), // Ukrainian
         },
+        HotkeyBinding {
+            hotkey: Hotkey {
+                vk: 0x13, // VK_PAUSE (Pause/Break)
+                modifiers: Modifiers::NONE,
+            },
+            action: HotkeyAction::ConvertText,
+        },
     ];
     eprintln!("Test hotkeys:");
     eprintln!("  LCtrl (tap) -> English (0x0409)");
     eprintln!("  RCtrl (tap) -> Українська (0x0422)");
+    eprintln!("  Pause/Break -> Convert text");
     eprintln!("  Русский -> no binding");
     hotkeys::set_bindings(bindings);
 
@@ -189,8 +199,8 @@ unsafe extern "system" fn wnd_proc(
                     layouts::switch_layout(lang_id);
                 }
                 hooks::ACTION_CONVERT_TEXT => {
-                    eprintln!("[action] Convert text (not yet implemented)");
-                    // TODO: implement in Stage 3
+                    eprintln!("[action] Convert text");
+                    conversion::perform_conversion();
                 }
                 _ => {}
             }
