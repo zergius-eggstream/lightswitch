@@ -1,16 +1,32 @@
-use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyState, VIRTUAL_KEY, VK_CONTROL, VK_LCONTROL, VK_LMENU, VK_LSHIFT, VK_MENU, VK_RCONTROL,
     VK_RMENU, VK_RSHIFT, VK_SHIFT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallNextHookEx, SetWindowsHookExW, UnhookWindowsHookEx, HHOOK, KBDLLHOOKSTRUCT,
-    WH_KEYBOARD_LL, WM_KEYDOWN, WM_SYSKEYDOWN,
+    CallNextHookEx, PostMessageW, SetWindowsHookExW, UnhookWindowsHookEx, HHOOK,
+    KBDLLHOOKSTRUCT, WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
 };
 
+use crate::hotkeys::{self, Modifiers};
 use std::sync::Mutex;
 
 static HOOK_HANDLE: Mutex<Option<isize>> = Mutex::new(None);
+static MAIN_HWND: Mutex<Option<isize>> = Mutex::new(None);
+
+/// Tracks state for standalone modifier detection.
+/// When a modifier key is pressed, we record its VK.
+/// If any other key is pressed before the modifier is released, we clear it.
+/// If the modifier is released cleanly, it's a standalone press.
+static PENDING_MODIFIER: Mutex<Option<u16>> = Mutex::new(None);
+
+pub const WM_APP_HOTKEY: u32 = 0x8001;
+pub const ACTION_SWITCH_LAYOUT: usize = 0;
+pub const ACTION_CONVERT_TEXT: usize = 1;
+
+pub fn set_main_hwnd(hwnd: HWND) {
+    *MAIN_HWND.lock().unwrap() = Some(hwnd.0 as isize);
+}
 
 pub fn install_hook() -> windows::core::Result<()> {
     unsafe {
@@ -29,12 +45,13 @@ pub fn uninstall_hook() {
     }
 }
 
-fn is_modifier_held() -> bool {
+fn get_modifiers() -> Modifiers {
     unsafe {
-        let ctrl = GetKeyState(VK_CONTROL.0 as i32) < 0;
-        let shift = GetKeyState(VK_SHIFT.0 as i32) < 0;
-        let alt = GetKeyState(VK_MENU.0 as i32) < 0;
-        ctrl || shift || alt
+        Modifiers {
+            ctrl: GetKeyState(VK_CONTROL.0 as i32) < 0,
+            shift: GetKeyState(VK_SHIFT.0 as i32) < 0,
+            alt: GetKeyState(VK_MENU.0 as i32) < 0,
+        }
     }
 }
 
@@ -46,20 +63,90 @@ fn is_modifier_key(vk: u16) -> bool {
     )
 }
 
+/// Posts an action to the main window.
+fn post_action(action: &hotkeys::HotkeyAction) -> bool {
+    let Some(hwnd_val) = *MAIN_HWND.lock().unwrap() else {
+        return false;
+    };
+    let hwnd = HWND(hwnd_val as *mut _);
+    let result = match action {
+        hotkeys::HotkeyAction::SwitchLayout(lang_id) => unsafe {
+            PostMessageW(
+                Some(hwnd),
+                WM_APP_HOTKEY,
+                WPARAM(ACTION_SWITCH_LAYOUT),
+                LPARAM(*lang_id as isize),
+            )
+        },
+        hotkeys::HotkeyAction::ConvertText => unsafe {
+            PostMessageW(
+                Some(hwnd),
+                WM_APP_HOTKEY,
+                WPARAM(ACTION_CONVERT_TEXT),
+                LPARAM(0),
+            )
+        },
+    };
+    result.is_ok()
+}
+
 unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if code >= 0 {
         let msg = wparam.0 as u32;
-        if msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN {
-            let kb_struct = unsafe { &*(lparam.0 as *const KBDLLHOOKSTRUCT) };
-            let vk = kb_struct.vkCode as u16;
+        let kb_struct = unsafe { &*(lparam.0 as *const KBDLLHOOKSTRUCT) };
+        let vk = kb_struct.vkCode as u16;
 
-            if !is_modifier_key(vk) {
-                #[cfg(debug_assertions)]
-                {
-                    let modifiers = is_modifier_held();
-                    eprintln!("[hook] vk=0x{:04X} modifiers_held={}", vk, modifiers);
+        match msg {
+            WM_KEYDOWN | WM_SYSKEYDOWN => {
+                if is_modifier_key(vk) {
+                    let mut pending = PENDING_MODIFIER.lock().unwrap();
+                    if pending.is_some() {
+                        // Another modifier pressed while one is pending — cancel standalone.
+                        // This prevents conflict with Ctrl+Shift, Alt+Shift, etc.
+                        *pending = None;
+                    } else {
+                        // Fresh modifier press. Check if it's a standalone hotkey candidate.
+                        let standalone_bindings = hotkeys::get_standalone_modifier_bindings();
+                        if standalone_bindings.iter().any(|b| b.hotkey.vk == vk) {
+                            *pending = Some(vk);
+                        }
+                    }
+                } else {
+                    // A non-modifier key was pressed.
+                    // Cancel any pending standalone modifier.
+                    *PENDING_MODIFIER.lock().unwrap() = None;
+
+                    // Check regular hotkeys (key + modifiers).
+                    let modifiers = get_modifiers();
+                    if let Some(action) = hotkeys::match_hotkey(vk, modifiers) {
+                        post_action(&action);
+                        return LRESULT(1); // Suppress
+                    }
+
+                    #[cfg(debug_assertions)]
+                    eprintln!(
+                        "[hook] vk=0x{:04X} ctrl={} shift={} alt={}",
+                        vk, modifiers.ctrl, modifiers.shift, modifiers.alt
+                    );
                 }
             }
+            WM_KEYUP | WM_SYSKEYUP => {
+                if is_modifier_key(vk) {
+                    let pending = PENDING_MODIFIER.lock().unwrap().take();
+                    if pending == Some(vk) {
+                        // Modifier was pressed and released without any other key in between.
+                        // This is a standalone modifier press — check hotkey.
+                        if let Some(action) =
+                            hotkeys::match_hotkey(vk, Modifiers::NONE)
+                        {
+                            eprintln!("[hook] Standalone modifier 0x{:04X} triggered", vk);
+                            post_action(&action);
+                            // Don't suppress keyup — let it pass through.
+                        }
+                    }
+                }
+            }
+            _ => {}
         }
     }
 

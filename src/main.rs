@@ -8,6 +8,7 @@ mod hotkeys;
 mod layouts;
 mod ui;
 
+use hotkeys::{Hotkey, HotkeyAction, HotkeyBinding, Modifiers};
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
@@ -31,6 +32,29 @@ fn main() {
     for layout in &installed {
         eprintln!("  - {} (0x{:04X})", layout.name, layout.lang_id);
     }
+
+    // Test hotkeys: LCtrl = English, RCtrl = Ukrainian, Russian has no binding.
+    let bindings = vec![
+        HotkeyBinding {
+            hotkey: Hotkey {
+                vk: 0xA2, // VK_LCONTROL
+                modifiers: Modifiers::NONE,
+            },
+            action: HotkeyAction::SwitchLayout(0x0409), // English
+        },
+        HotkeyBinding {
+            hotkey: Hotkey {
+                vk: 0xA3, // VK_RCONTROL
+                modifiers: Modifiers::NONE,
+            },
+            action: HotkeyAction::SwitchLayout(0x0422), // Ukrainian
+        },
+    ];
+    eprintln!("Test hotkeys:");
+    eprintln!("  LCtrl (tap) -> English (0x0409)");
+    eprintln!("  RCtrl (tap) -> Українська (0x0422)");
+    eprintln!("  Русский -> no binding");
+    hotkeys::set_bindings(bindings);
 
     match hooks::install_hook() {
         Ok(_) => eprintln!("[init] Keyboard hook installed"),
@@ -66,6 +90,7 @@ fn main() {
         )
         .unwrap();
 
+        hooks::set_main_hwnd(hwnd);
         add_tray_icon(hwnd);
 
         let mut msg = MSG::default();
@@ -156,6 +181,21 @@ unsafe extern "system" fn wnd_proc(
     lparam: LPARAM,
 ) -> LRESULT {
     match msg {
+        hooks::WM_APP_HOTKEY => {
+            match wparam.0 {
+                hooks::ACTION_SWITCH_LAYOUT => {
+                    let lang_id = lparam.0 as u16;
+                    eprintln!("[action] Switch layout to 0x{:04X}", lang_id);
+                    layouts::switch_layout(lang_id);
+                }
+                hooks::ACTION_CONVERT_TEXT => {
+                    eprintln!("[action] Convert text (not yet implemented)");
+                    // TODO: implement in Stage 3
+                }
+                _ => {}
+            }
+            LRESULT(0)
+        }
         WM_TRAY_ICON => {
             let event = (lparam.0 & 0xFFFF) as u32;
             use windows::Win32::UI::WindowsAndMessaging::{WM_LBUTTONDBLCLK, WM_RBUTTONUP};

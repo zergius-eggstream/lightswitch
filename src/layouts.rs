@@ -1,4 +1,6 @@
-use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyboardLayoutList, HKL};
+use windows::Win32::Foundation::HWND;
+use windows::Win32::UI::Input::KeyboardAndMouse::{ActivateKeyboardLayout, GetKeyboardLayoutList, HKL, KLF_SETFORPROCESS};
+use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, PostMessageW, WM_INPUTLANGCHANGEREQUEST};
 
 /// Represents an installed keyboard layout.
 #[derive(Debug, Clone)]
@@ -26,6 +28,47 @@ pub fn get_installed_layouts() -> Vec<LayoutInfo> {
             LayoutInfo { hkl, lang_id, name }
         })
         .collect()
+}
+
+/// Finds the HKL for a given language ID.
+pub fn find_hkl_by_lang_id(lang_id: u16) -> Option<HKL> {
+    get_installed_layouts()
+        .into_iter()
+        .find(|l| l.lang_id == lang_id)
+        .map(|l| l.hkl)
+}
+
+/// Switches the keyboard layout for the foreground window to the given language.
+pub fn switch_layout(lang_id: u16) -> bool {
+    let Some(hkl) = find_hkl_by_lang_id(lang_id) else {
+        eprintln!("[layout] Language 0x{:04X} not found in installed layouts", lang_id);
+        return false;
+    };
+
+    unsafe {
+        // Post WM_INPUTLANGCHANGEREQUEST to the foreground window
+        let fg = GetForegroundWindow();
+        if fg == HWND::default() {
+            return false;
+        }
+
+        let result = PostMessageW(
+            Some(fg),
+            WM_INPUTLANGCHANGEREQUEST,
+            windows::Win32::Foundation::WPARAM(0),
+            windows::Win32::Foundation::LPARAM(hkl.0 as isize),
+        );
+
+        if result.is_ok() {
+            eprintln!("[layout] Switched to 0x{:04X} ({})", lang_id, lang_id_to_name(lang_id));
+            true
+        } else {
+            // Fallback: ActivateKeyboardLayout (affects our process)
+            let _ = ActivateKeyboardLayout(hkl, KLF_SETFORPROCESS);
+            eprintln!("[layout] Fallback switch to 0x{:04X}", lang_id);
+            true
+        }
+    }
 }
 
 /// Maps a language ID to a human-readable name.
