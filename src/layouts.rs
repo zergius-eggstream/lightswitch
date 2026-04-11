@@ -46,12 +46,11 @@ pub fn find_hkl_by_lang_id(lang_id: u16) -> Option<HKL> {
 /// Switches the keyboard layout for the foreground window to the given language.
 pub fn switch_layout(lang_id: u16) -> bool {
     let Some(hkl) = find_hkl_by_lang_id(lang_id) else {
-        eprintln!("[layout] Language 0x{:04X} not found in installed layouts", lang_id);
+        crate::logger::log(&format!("[layout] not installed: 0x{:04X}", lang_id));
         return false;
     };
 
     unsafe {
-        // Post WM_INPUTLANGCHANGEREQUEST to the foreground window
         let fg = GetForegroundWindow();
         if fg == HWND::default() {
             return false;
@@ -64,15 +63,11 @@ pub fn switch_layout(lang_id: u16) -> bool {
             windows::Win32::Foundation::LPARAM(hkl.0 as isize),
         );
 
-        if result.is_ok() {
-            eprintln!("[layout] Switched to 0x{:04X} ({})", lang_id, lang_id_to_name(lang_id));
-            true
-        } else {
+        if result.is_err() {
             // Fallback: ActivateKeyboardLayout (affects our process)
             let _ = ActivateKeyboardLayout(hkl, KLF_SETFORPROCESS);
-            eprintln!("[layout] Fallback switch to 0x{:04X}", lang_id);
-            true
         }
+        true
     }
 }
 

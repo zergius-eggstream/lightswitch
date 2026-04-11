@@ -14,9 +14,11 @@ const ID_SAVE: u16 = 2001;
 const ID_CANCEL: u16 = 2002;
 const ID_AUTOSTART: u16 = 2003;
 const ID_CONVERSION_HOTKEY: u16 = 2100;
+const ID_WORD_HOTKEY: u16 = 2101;
 const ID_LAYOUT_HOTKEY_BASE: u16 = 3000;
 const ID_CLEAR_BASE: u16 = 4000;         // 4000, 4001, 4002... clear buttons for layouts
 const ID_CLEAR_CONVERSION: u16 = 4100;
+const ID_CLEAR_WORD: u16 = 4101;
 
 const BST_CHECKED_VAL: usize = 1;
 const BM_SETCHECK_MSG: u32 = 0x00F1;
@@ -73,7 +75,7 @@ fn create_settings_window() {
         RegisterClassW(&wc);
 
         let num_layouts = installed.len();
-        let window_height = 160 + (num_layouts as i32 * 30) + 60;
+        let window_height = 190 + (num_layouts as i32 * 30) + 60;
 
         let hwnd = CreateWindowExW(
             Default::default(),
@@ -123,7 +125,7 @@ fn create_settings_window() {
         y += 10;
         create_label(hwnd, "Text Conversion:", 10, y, 390, 20, font.0);
         y += 25;
-        create_label(hwnd, "Hotkey:", 20, y + 2, 150, 20, font.0);
+        create_label(hwnd, "All / Selection:", 20, y + 2, 150, 20, font.0);
 
         let conv_display = if config.conversion.hotkey.is_empty() {
             "(click to set)".to_string()
@@ -132,6 +134,16 @@ fn create_settings_window() {
         };
         create_button(hwnd, &conv_display, 170, y, 170, 24, ID_CONVERSION_HOTKEY, font.0);
         create_button(hwnd, "X", 345, y, 26, 24, ID_CLEAR_CONVERSION, font.0);
+        y += 30;
+
+        create_label(hwnd, "Last word:", 20, y + 2, 150, 20, font.0);
+        let word_display = if config.conversion.word_hotkey.is_empty() {
+            "(click to set)".to_string()
+        } else {
+            config.conversion.word_hotkey.clone()
+        };
+        create_button(hwnd, &word_display, 170, y, 170, 24, ID_WORD_HOTKEY, font.0);
+        create_button(hwnd, "X", 345, y, 26, 24, ID_CLEAR_WORD, font.0);
         y += 40;
 
         create_checkbox(hwnd, "Start with Windows", 20, y, 200, 20, ID_AUTOSTART, config.general.autostart, font.0);
@@ -224,12 +236,16 @@ unsafe extern "system" fn settings_proc(
                         unsafe { DestroyWindow(hwnd).unwrap() };
                     }
                     _ if id == ID_CONVERSION_HOTKEY
+                        || id == ID_WORD_HOTKEY
                         || (id >= ID_LAYOUT_HOTKEY_BASE && id < ID_LAYOUT_HOTKEY_BASE + 20) =>
                     {
                         start_hotkey_capture(hwnd, id);
                     }
                     _ if id == ID_CLEAR_CONVERSION => {
                         clear_hotkey(hwnd, ID_CONVERSION_HOTKEY);
+                    }
+                    _ if id == ID_CLEAR_WORD => {
+                        clear_hotkey(hwnd, ID_WORD_HOTKEY);
                     }
                     _ if id >= ID_CLEAR_BASE && id < ID_CLEAR_BASE + 20 => {
                         let layout_control = ID_LAYOUT_HOTKEY_BASE + (id - ID_CLEAR_BASE);
@@ -320,7 +336,10 @@ fn handle_hotkey_capture(hwnd: HWND, wparam: WPARAM, lparam: LPARAM, is_keyup: b
             shift: unsafe { GetKeyState(VK_SHIFT.0 as i32) } < 0,
             alt: unsafe { GetKeyState(VK_MENU.0 as i32) } < 0,
         };
-        finish_capture(hwnd, s, control_id, vk, modifiers);
+        // Windows quirk: Ctrl+Pause generates VK_CANCEL (0x03) instead of VK_PAUSE (0x13).
+        // Normalize back to VK_PAUSE so the user sees what they actually pressed.
+        let normalized_vk = if vk == 0x03 { 0x13 } else { vk };
+        finish_capture(hwnd, s, control_id, normalized_vk, modifiers);
     }
 }
 
@@ -334,6 +353,8 @@ fn finish_capture(hwnd: HWND, state: &mut SettingsState, control_id: u16, vk: u1
     // Store the new binding
     if control_id == ID_CONVERSION_HOTKEY {
         state.config.conversion.hotkey = key_name;
+    } else if control_id == ID_WORD_HOTKEY {
+        state.config.conversion.word_hotkey = key_name;
     } else if control_id >= ID_LAYOUT_HOTKEY_BASE {
         let idx = (control_id - ID_LAYOUT_HOTKEY_BASE) as usize;
         if let Some(&lang_id) = state.layout_ids.get(idx) {
@@ -352,6 +373,8 @@ fn clear_hotkey(hwnd: HWND, control_id: u16) {
 
     if control_id == ID_CONVERSION_HOTKEY {
         s.config.conversion.hotkey.clear();
+    } else if control_id == ID_WORD_HOTKEY {
+        s.config.conversion.word_hotkey.clear();
     } else if control_id >= ID_LAYOUT_HOTKEY_BASE {
         let idx = (control_id - ID_LAYOUT_HOTKEY_BASE) as usize;
         if let Some(&lang_id) = s.layout_ids.get(idx) {
@@ -382,6 +405,7 @@ fn refresh_all_buttons(hwnd: HWND, state: &SettingsState) {
     }
 
     assignments.push((ID_CONVERSION_HOTKEY, state.config.conversion.hotkey.clone(), "Text Conversion".to_string()));
+    assignments.push((ID_WORD_HOTKEY, state.config.conversion.word_hotkey.clone(), "Word Conversion".to_string()));
 
     // For each assignment, check if it conflicts with any other
     for i in 0..assignments.len() {
@@ -430,6 +454,13 @@ fn has_conflicts(state: &SettingsState) -> bool {
 
     if !state.config.conversion.hotkey.is_empty() {
         seen.push(&state.config.conversion.hotkey);
+    }
+
+    if !state.config.conversion.word_hotkey.is_empty() {
+        if seen.contains(&state.config.conversion.word_hotkey.as_str()) {
+            return true;
+        }
+        seen.push(&state.config.conversion.word_hotkey);
     }
 
     for &lang_id in &state.layout_ids {

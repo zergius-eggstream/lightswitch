@@ -10,11 +10,25 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 use crate::hotkeys::{self, Modifiers};
+use std::collections::HashSet;
 use std::sync::Mutex;
 
 static HOOK_HANDLE: Mutex<Option<isize>> = Mutex::new(None);
 static MAIN_HWND: Mutex<Option<isize>> = Mutex::new(None);
 static HOOK_SUSPENDED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Set of VK codes for which we have suppressed a keydown.
+/// We swallow auto-repeat keydowns and the matching keyup for these keys,
+/// so the application sees neither the press nor any phantom events.
+static SUPPRESSED_KEYS: Mutex<Option<HashSet<u16>>> = Mutex::new(None);
+
+fn suppressed_keys() -> std::sync::MutexGuard<'static, Option<HashSet<u16>>> {
+    let mut guard = SUPPRESSED_KEYS.lock().unwrap();
+    if guard.is_none() {
+        *guard = Some(HashSet::new());
+    }
+    guard
+}
 
 /// Suspends hook processing (e.g. while settings window captures a hotkey).
 pub fn set_suspended(suspended: bool) {
@@ -30,6 +44,7 @@ static PENDING_MODIFIER: Mutex<Option<u16>> = Mutex::new(None);
 pub const WM_APP_HOTKEY: u32 = 0x8001;
 pub const ACTION_SWITCH_LAYOUT: usize = 0;
 pub const ACTION_CONVERT_TEXT: usize = 1;
+pub const ACTION_CONVERT_WORD: usize = 2;
 
 pub fn set_main_hwnd(hwnd: HWND) {
     *MAIN_HWND.lock().unwrap() = Some(hwnd.0 as isize);
@@ -93,6 +108,14 @@ fn post_action(action: &hotkeys::HotkeyAction) -> bool {
                 LPARAM(0),
             )
         },
+        hotkeys::HotkeyAction::ConvertWord => unsafe {
+            PostMessageW(
+                Some(hwnd),
+                WM_APP_HOTKEY,
+                WPARAM(ACTION_CONVERT_WORD),
+                LPARAM(0),
+            )
+        },
     };
     result.is_ok()
 }
@@ -133,30 +156,55 @@ unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARA
                     // Cancel any pending standalone modifier.
                     *PENDING_MODIFIER.lock().unwrap() = None;
 
-                    // Check regular hotkeys (key + modifiers).
-                    let modifiers = get_modifiers();
-                    if let Some(action) = hotkeys::match_hotkey(vk, modifiers) {
-                        post_action(&action);
-                        return LRESULT(1); // Suppress
+                    // Windows quirk: Ctrl+Pause produces VK_CANCEL (0x03) instead of VK_PAUSE.
+                    let normalized_vk = if vk == 0x03 { 0x13 } else { vk };
+
+                    // If we already suppressed this key (auto-repeat), just swallow it.
+                    {
+                        let suppressed = suppressed_keys();
+                        if let Some(set) = suppressed.as_ref() {
+                            if set.contains(&normalized_vk) || set.contains(&vk) {
+                                return LRESULT(1);
+                            }
+                        }
                     }
 
-                    #[cfg(debug_assertions)]
-                    eprintln!(
-                        "[hook] vk=0x{:04X} ctrl={} shift={} alt={}",
-                        vk, modifiers.ctrl, modifiers.shift, modifiers.alt
-                    );
+                    // Check regular hotkeys (key + modifiers).
+                    let modifiers = get_modifiers();
+                    if let Some(action) = hotkeys::match_hotkey(normalized_vk, modifiers) {
+                        crate::logger::log(&format!("[hotkey] {:?}", action));
+                        post_action(&action);
+                        // Mark key as suppressed to swallow auto-repeats and matching keyup.
+                        let mut suppressed = suppressed_keys();
+                        if let Some(set) = suppressed.as_mut() {
+                            set.insert(normalized_vk);
+                            set.insert(vk); // also raw vk in case of normalization
+                        }
+                        return LRESULT(1); // Suppress
+                    }
                 }
             }
             WM_KEYUP | WM_SYSKEYUP => {
+                // Normalize VK_CANCEL → VK_PAUSE for symmetry with keydown handling
+                let normalized_vk = if vk == 0x03 { 0x13 } else { vk };
+
+                // If we suppressed the keydown for this key, also suppress the keyup
+                // and clear it from the suppressed set.
+                {
+                    let mut suppressed = suppressed_keys();
+                    if let Some(set) = suppressed.as_mut() {
+                        if set.remove(&normalized_vk) || set.remove(&vk) {
+                            return LRESULT(1);
+                        }
+                    }
+                }
+
                 if is_modifier_key(vk) {
                     let pending = PENDING_MODIFIER.lock().unwrap().take();
                     if pending == Some(vk) {
                         // Modifier was pressed and released without any other key in between.
-                        // This is a standalone modifier press — check hotkey.
-                        if let Some(action) =
-                            hotkeys::match_hotkey(vk, Modifiers::NONE)
-                        {
-                            eprintln!("[hook] Standalone modifier 0x{:04X} triggered", vk);
+                        if let Some(action) = hotkeys::match_hotkey(vk, Modifiers::NONE) {
+                            crate::logger::log(&format!("[hotkey] {:?} (standalone)", action));
                             post_action(&action);
                             // Don't suppress keyup — let it pass through.
                         }

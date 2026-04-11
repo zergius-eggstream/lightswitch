@@ -9,6 +9,7 @@ mod hotkeys;
 mod icon;
 mod input;
 mod layouts;
+mod logger;
 mod ui;
 
 use config::Config;
@@ -37,28 +38,28 @@ static CURRENT_LAYOUT: Mutex<u16> = Mutex::new(0);
 static CURRENT_ICON: Mutex<isize> = Mutex::new(0);
 
 fn main() {
+    logger::init();
+    log!("LightSwitch starting");
+
     let installed = layouts::get_installed_layouts();
-    eprintln!("Detected {} keyboard layout(s):", installed.len());
+    log!("Detected {} keyboard layout(s)", installed.len());
     for layout in &installed {
-        eprintln!("  - {} (0x{:04X})", layout.name, layout.lang_id);
+        log!("  - {} (0x{:04X})", layout.name, layout.lang_id);
     }
 
     // Load config and apply hotkey bindings
     let config = Config::load();
     let bindings = config.to_bindings();
     if bindings.is_empty() {
-        eprintln!("[init] No hotkey bindings configured. Open Settings to set them up.");
+        log!("No hotkey bindings configured — open Settings to set them up");
     } else {
-        eprintln!("[init] Loaded {} hotkey binding(s):", bindings.len());
-        for b in &bindings {
-            eprintln!("  {} -> {:?}", b.hotkey, b.action);
-        }
+        log!("Loaded {} hotkey binding(s)", bindings.len());
     }
     hotkeys::set_bindings(bindings);
 
     match hooks::install_hook() {
-        Ok(_) => eprintln!("[init] Keyboard hook installed"),
-        Err(e) => eprintln!("[init] Failed to install hook: {}", e),
+        Ok(_) => log!("Keyboard hook installed"),
+        Err(e) => log!("Failed to install hook: {}", e),
     }
 
     unsafe {
@@ -215,6 +216,23 @@ unsafe extern "system" fn wnd_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
+    // Catch any panic inside the message handler so it doesn't abort the process.
+    // wnd_proc is called from Windows code which cannot unwind through Rust panics.
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        wnd_proc_inner(hwnd, msg, wparam, lparam)
+    }))
+    .unwrap_or_else(|_| {
+        eprintln!("[wnd_proc] Caught panic in handler — continuing");
+        unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+    })
+}
+
+unsafe fn wnd_proc_inner(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
     match msg {
         WM_TIMER => {
             if wparam.0 == TIMER_LAYOUT_POLL {
@@ -226,12 +244,13 @@ unsafe extern "system" fn wnd_proc(
             match wparam.0 {
                 hooks::ACTION_SWITCH_LAYOUT => {
                     let lang_id = lparam.0 as u16;
-                    eprintln!("[action] Switch layout to 0x{:04X}", lang_id);
                     layouts::switch_layout(lang_id);
                 }
                 hooks::ACTION_CONVERT_TEXT => {
-                    eprintln!("[action] Convert text");
                     conversion::perform_conversion();
+                }
+                hooks::ACTION_CONVERT_WORD => {
+                    conversion::perform_word_conversion();
                 }
                 _ => {}
             }

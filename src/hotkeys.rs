@@ -67,6 +67,8 @@ pub enum HotkeyAction {
     SwitchLayout(u16),
     /// Convert selected/all text cyclically.
     ConvertText,
+    /// Convert the word to the left of the cursor (or selection) cyclically.
+    ConvertWord,
 }
 
 /// A registered hotkey binding.

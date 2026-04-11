@@ -25,6 +25,8 @@ pub struct GeneralConfig {
 pub struct ConversionConfig {
     #[serde(default = "default_conversion_hotkey")]
     pub hotkey: String,
+    #[serde(default)]
+    pub word_hotkey: String,
     #[serde(default = "default_conversion_mode")]
     pub mode: String,
 }
@@ -54,6 +56,7 @@ impl Default for ConversionConfig {
     fn default() -> Self {
         Self {
             hotkey: default_conversion_hotkey(),
+            word_hotkey: String::new(),
             mode: default_conversion_mode(),
         }
     }
@@ -120,6 +123,15 @@ impl Config {
                 bindings.push(HotkeyBinding {
                     hotkey,
                     action: HotkeyAction::ConvertText,
+                });
+            }
+        }
+
+        if !self.conversion.word_hotkey.is_empty() {
+            if let Some(hotkey) = parse_hotkey(&self.conversion.word_hotkey) {
+                bindings.push(HotkeyBinding {
+                    hotkey,
+                    action: HotkeyAction::ConvertWord,
                 });
             }
         }

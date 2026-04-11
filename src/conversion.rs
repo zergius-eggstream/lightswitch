@@ -1,4 +1,4 @@
-use crate::{clipboard, input, layouts};
+use crate::{clipboard, input, layouts, log};
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
@@ -82,111 +82,133 @@ pub fn convert_cyclic(text: &str, current_layout: u16, layout_order: &[u16]) -> 
     (converted, target)
 }
 
-/// Performs the full text conversion flow:
-/// 1. Save clipboard
-/// 2. Copy selected text (or select all + copy)
-/// 3. Convert through layout chain
-/// 4. Paste result
-/// 5. Restore clipboard
+/// Converts the currently selected text via clipboard.
+/// If nothing is selected — does nothing.
+///
+/// **Known limitation:** in editors with "smart copy" (Notepad on Windows 11,
+/// VS Code, many Electron apps, etc.) Ctrl+C without an explicit selection
+/// copies the current line. We can't distinguish this from a real one-line
+/// selection without higher-level APIs (UI Automation), so pressing this
+/// hotkey with no selection in such an editor will append a converted copy
+/// of the current line. Workaround: always make a real selection. Proper
+/// fix planned via UI Automation (Stage 8).
 pub fn perform_conversion() {
-    // Save current clipboard content
+    input::wait_for_modifiers_release();
+
     let saved_clipboard = clipboard::get_text();
-
-    // Clear clipboard so we can detect if copy worked
     clipboard::set_text("");
-
-    // Small delay to let clipboard settle
     std::thread::sleep(std::time::Duration::from_millis(30));
 
-    // Try to copy selected text
     input::send_copy();
-    std::thread::sleep(std::time::Duration::from_millis(50));
+    std::thread::sleep(std::time::Duration::from_millis(80));
 
-    // Read what was copied
-    let copied = clipboard::get_text().unwrap_or_default();
-    let (text, did_select_all) = if copied.is_empty() {
-        // Nothing was selected — select all and copy
-        input::send_select_all();
-        std::thread::sleep(std::time::Duration::from_millis(30));
-        input::send_copy();
-        std::thread::sleep(std::time::Duration::from_millis(50));
-        let text = clipboard::get_text().unwrap_or_default();
-        (text, true)
-    } else {
-        (copied, false)
-    };
-
+    let text = clipboard::get_text().unwrap_or_default();
     if text.is_empty() {
-        // Nothing to convert — restore clipboard and bail
-        if let Some(saved) = saved_clipboard {
-            clipboard::set_text(&saved);
-        }
+        restore_clipboard(saved_clipboard);
         return;
     }
 
-    // Get current layout and layout order
+    if !convert_and_paste(&text) {
+        restore_clipboard(saved_clipboard);
+        return;
+    }
+
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    restore_clipboard(saved_clipboard);
+}
+
+/// Performs single-word conversion: selects the word to the left of the cursor
+/// (Ctrl+Shift+Left), converts it, pastes back.
+pub fn perform_word_conversion() {
+    input::wait_for_modifiers_release();
+
+    let saved_clipboard = clipboard::get_text();
+    clipboard::set_text("");
+    std::thread::sleep(std::time::Duration::from_millis(30));
+
+    input::send_select_word_left();
+    std::thread::sleep(std::time::Duration::from_millis(50));
+
+    input::send_copy();
+    std::thread::sleep(std::time::Duration::from_millis(80));
+
+    let text = clipboard::get_text().unwrap_or_default();
+    if text.is_empty() {
+        restore_clipboard(saved_clipboard);
+        return;
+    }
+
+    if !convert_and_paste(&text) {
+        restore_clipboard(saved_clipboard);
+        return;
+    }
+
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    restore_clipboard(saved_clipboard);
+}
+
+/// Shared logic: takes text, performs cyclic conversion, pastes result, switches layout.
+/// Returns true on success, false if no conversion was possible.
+fn convert_and_paste(text: &str) -> bool {
+    if text.is_empty() {
+        return false;
+    }
+
     let current_layout = layouts::get_current_layout();
     let layout_order = layouts::get_layout_order();
 
-    eprintln!("[convert] current_layout=0x{:04X}, layout_order={:04X?}", current_layout, layout_order);
-    eprintln!("[convert] text to convert: '{}'", truncate(&text, 60));
-
-    // Filter to supported layouts only
     let supported = supported_layouts();
     let active_order: Vec<u16> = layout_order
         .iter()
         .filter(|id| supported.contains(id))
         .copied()
         .collect();
-    eprintln!("[convert] active_order (supported only): {:04X?}", active_order);
 
     if active_order.len() < 2 {
-        eprintln!("[convert] Need at least 2 supported layouts, found {}", active_order.len());
-        if let Some(saved) = saved_clipboard {
-            clipboard::set_text(&saved);
-        }
-        return;
+        log!("[convert] need at least 2 supported layouts, found {}", active_order.len());
+        return false;
     }
 
-    // Determine source layout: use current layout if it's supported,
-    // otherwise try to guess from the text characters
     let source = if active_order.contains(&current_layout) {
         current_layout
     } else {
-        // Default to first in order
         active_order[0]
     };
 
-    let (converted, target) = convert_cyclic(&text, source, &active_order);
-    eprintln!("[convert] '{}' -> '{}' (target layout: 0x{:04X})", truncate(&text, 40), truncate(&converted, 40), target);
+    let (converted, target) = convert_cyclic(text, source, &active_order);
+    log!("[convert] '{}' -> '{}' (0x{:04X} → 0x{:04X})",
+        truncate(text, 40), truncate(&converted, 40), source, target);
 
-    // Paste the converted text
     clipboard::set_text(&converted);
-    std::thread::sleep(std::time::Duration::from_millis(30));
-    input::send_paste();
     std::thread::sleep(std::time::Duration::from_millis(50));
+    input::send_paste();
+    std::thread::sleep(std::time::Duration::from_millis(80));
 
-    // Switch system layout to match the converted text
-    layouts::switch_layout(target);
-
-    // If we selected all, move cursor to deselect (press End)
-    if did_select_all {
-        use windows::Win32::UI::Input::KeyboardAndMouse::VK_END;
-        input::send_key(VK_END);
-    }
-
-    // Restore original clipboard
+    // Re-select the just-pasted text so the user can press the hotkey again
+    // to cycle through layouts without manually re-selecting.
+    let select_count = converted.chars().filter(|&c| c != '\r').count();
+    input::send_select_n_left(select_count);
     std::thread::sleep(std::time::Duration::from_millis(30));
-    if let Some(saved) = saved_clipboard {
-        clipboard::set_text(&saved);
+
+    layouts::switch_layout(target);
+    true
+}
+
+fn restore_clipboard(saved: Option<String>) {
+    if let Some(text) = saved {
+        clipboard::set_text(&text);
     }
 }
 
+/// Truncates a string to at most `max` characters (not bytes), appending "..." if cut.
+/// Safe for UTF-8 text including multi-byte characters.
 fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max {
+    let char_count = s.chars().count();
+    if char_count <= max {
         s.to_string()
     } else {
-        format!("{}...", &s[..max])
+        let truncated: String = s.chars().take(max).collect();
+        format!("{}...", truncated)
     }
 }
 

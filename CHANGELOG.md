@@ -21,6 +21,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - TOML-based configuration at `%APPDATA%\LightSwitch\config.toml`
 - Per-user autostart via `HKCU\...\Run` registry key (no admin required)
 - Hardcoded conversion tables for EN/RU/UA standard layouts
+- Single-word conversion via `Ctrl+Shift+Left` selection of the word at the cursor
+- Dynamic tray icon showing the current layout's 3-letter native abbreviation (УКР, РУС, ENG, etc.) via `GetLocaleInfoW`
+- File logging to `%APPDATA%\LightSwitch\lightswitch.log` for diagnostics, cleared on each startup
+- Suppression of auto-repeat keydown events for matched hotkeys (only one action per press)
+- Force-release of held modifier keys before injecting our own SendInput sequences
+- `KEYEVENTF_EXTENDEDKEY` flag for arrow/navigation keys so they aren't misinterpreted as numpad equivalents
+- Normalization of `VK_CANCEL` (the code Windows produces for Ctrl+Pause) back to `VK_PAUSE`
+- `catch_unwind` wrapper around the window proc so internal panics don't abort the process
 
 ### Known limitations
 - Conversion tables are hardcoded and cover only EN/RU/UA
@@ -28,3 +36,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - RAlt (AltGr), Win, and Fn keys cannot be used as hotkeys
 - No UAC elevation option for capturing keys in admin-level windows
 - No icon yet (uses default Windows application icon)
+- **Smart-copy editors (Notepad on Win11, VS Code, many Electron apps) copy the current line on `Ctrl+C` when nothing is selected.** LightSwitch can't tell this apart from a real one-line selection, so triggering the conversion hotkey without an explicit selection in such an editor will incorrectly append a converted copy of the current line. Workaround: always make a real selection before pressing the hotkey. Proper fix planned via UI Automation (Stage 8).

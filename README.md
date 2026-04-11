@@ -32,6 +32,13 @@ Currently supports: English (US), Russian, Ukrainian standard layouts. Other lan
 
 See [docs/technical-specification.md](docs/technical-specification.md) for the full spec and roadmap.
 
+## Known limitations
+
+- **Smart-copy editors and the "convert selection" hotkey.** In editors with "smart copy" — Notepad on Windows 11, VS Code, many Electron apps — pressing `Ctrl+C` without an explicit text selection copies the current line. LightSwitch can't distinguish this from a real one-line selection without higher-level APIs, so triggering the conversion hotkey with no explicit selection in such editors will incorrectly append a converted copy of the current line. **Workaround:** always make a real selection before pressing the conversion hotkey. A proper fix is planned via UI Automation integration (Stage 8 of the roadmap).
+- Russian typewriter and other secondary layouts for the same language are not distinguished — only the primary `lang_id` is used. Planned for Stage 6.
+- RAlt (AltGr), Win, and Fn keys cannot be used as hotkeys.
+- No UAC elevation option for capturing keys in admin-level windows.
+
 ## Building from source
 
 Requirements:
@@ -71,6 +78,12 @@ Configuration is stored at `%APPDATA%\LightSwitch\config.toml`.
 | Function keys, letters, digits, etc. | Combined with Ctrl/Shift/Alt as needed |
 | Win key | Not supported yet (Start menu conflict) |
 | Fn key | Not visible to Windows API |
+
+**Notes when using modifiers as standalone hotkeys:**
+
+- **LAlt** — Windows may briefly highlight the menu bar in some apps when Alt is pressed alone. LightSwitch does not suppress this side effect.
+- **LShift / RShift** — Windows accessibility shortcuts remain active: 5 quick Shift presses trigger Sticky Keys, holding Right Shift for 8 seconds triggers Filter Keys. Disable these in Windows Accessibility settings if they get in the way.
+- **Ctrl+Pause** — Windows generates `VK_CANCEL` instead of `VK_PAUSE` for this combo; LightSwitch normalizes this automatically.
 
 ## License
 
