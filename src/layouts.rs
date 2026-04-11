@@ -1,4 +1,5 @@
 use windows::Win32::Foundation::HWND;
+use windows::Win32::Globalization::{GetLocaleInfoW, LOCALE_SNATIVELANGUAGENAME};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     ActivateKeyboardLayout, GetKeyboardLayoutList, GetKeyboardLayout, HKL, KLF_SETFORPROCESS,
 };
@@ -90,16 +91,36 @@ pub fn get_layout_order() -> Vec<u16> {
     get_installed_layouts().iter().map(|l| l.lang_id).collect()
 }
 
-/// Maps a language ID to a human-readable name.
-fn lang_id_to_name(lang_id: u16) -> String {
-    match lang_id {
-        0x0409 => "English (US)".to_string(),
-        0x0809 => "English (UK)".to_string(),
-        0x0419 => "Русский".to_string(),
-        0x0422 => "Українська".to_string(),
-        0x0415 => "Polski".to_string(),
-        0x0407 => "Deutsch".to_string(),
-        0x040C => "Français".to_string(),
-        _ => format!("Unknown (0x{:04X})", lang_id),
+/// Returns the native language name for a given lang_id (e.g. "українська", "русский", "English").
+/// Falls back to a hex code if the lookup fails.
+pub fn lang_id_to_name(lang_id: u16) -> String {
+    let mut buffer = [0u16; 128];
+    let len = unsafe { GetLocaleInfoW(lang_id as u32, LOCALE_SNATIVELANGUAGENAME, Some(&mut buffer)) };
+    if len > 0 {
+        let s = String::from_utf16_lossy(&buffer[..(len - 1) as usize]);
+        // Capitalize first letter for display ("українська" → "Українська")
+        let mut chars = s.chars();
+        match chars.next() {
+            Some(c) => c.to_uppercase().chain(chars).collect(),
+            None => format!("Unknown (0x{:04X})", lang_id),
+        }
+    } else {
+        format!("Unknown (0x{:04X})", lang_id)
+    }
+}
+
+/// Returns a 3-letter abbreviation in the language's native script (e.g. "УКР", "РУС", "ENG").
+/// Built by taking the first 3 characters of the native language name and uppercasing them.
+pub fn lang_id_to_abbrev(lang_id: u16) -> String {
+    let mut buffer = [0u16; 128];
+    let len = unsafe { GetLocaleInfoW(lang_id as u32, LOCALE_SNATIVELANGUAGENAME, Some(&mut buffer)) };
+    if len > 0 {
+        let s = String::from_utf16_lossy(&buffer[..(len - 1) as usize]);
+        s.chars()
+            .take(3)
+            .flat_map(|c| c.to_uppercase())
+            .collect()
+    } else {
+        "??".to_string()
     }
 }

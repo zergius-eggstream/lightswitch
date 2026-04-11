@@ -6,27 +6,35 @@ mod config;
 mod conversion;
 mod hooks;
 mod hotkeys;
+mod icon;
 mod input;
 mod layouts;
 mod ui;
 
 use config::Config;
-use windows::core::{w, PCWSTR};
+use std::sync::Mutex;
+use windows::core::w;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Shell::{
-    Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NOTIFYICONDATAW,
+    Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY,
+    NOTIFYICONDATAW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW, LoadImageW,
-    PostQuitMessage, RegisterClassW, TranslateMessage, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT,
-    HICON, IMAGE_ICON, LR_DEFAULTSIZE, LR_SHARED, MSG, WM_COMMAND, WM_DESTROY, WM_USER,
-    WNDCLASSW, WS_OVERLAPPEDWINDOW,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW, KillTimer,
+    PostQuitMessage, RegisterClassW, SetTimer, TranslateMessage, CS_HREDRAW, CS_VREDRAW,
+    CW_USEDEFAULT, HICON, MSG, WM_COMMAND, WM_DESTROY, WM_TIMER, WM_USER, WNDCLASSW,
+    WS_OVERLAPPEDWINDOW,
 };
 
 const WM_TRAY_ICON: u32 = WM_USER + 1;
 const IDM_SETTINGS: u16 = 1001;
 const IDM_EXIT: u16 = 1002;
+const TIMER_LAYOUT_POLL: usize = 1;
+const TIMER_LAYOUT_POLL_MS: u32 = 500;
+
+static CURRENT_LAYOUT: Mutex<u16> = Mutex::new(0);
+static CURRENT_ICON: Mutex<isize> = Mutex::new(0);
 
 fn main() {
     let installed = layouts::get_installed_layouts();
@@ -85,19 +93,71 @@ fn main() {
         hooks::set_main_hwnd(hwnd);
         add_tray_icon(hwnd);
 
+        // Start polling layout for tray icon updates
+        SetTimer(Some(hwnd), TIMER_LAYOUT_POLL, TIMER_LAYOUT_POLL_MS, None);
+
         let mut msg = MSG::default();
         while GetMessageW(&mut msg, None, 0, 0).as_bool() {
             let _ = TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
 
+        let _ = KillTimer(Some(hwnd), TIMER_LAYOUT_POLL);
         remove_tray_icon(hwnd);
+        let icon_handle = *CURRENT_ICON.lock().unwrap();
+        if icon_handle != 0 {
+            icon::destroy_icon(HICON(icon_handle as *mut _));
+        }
         hooks::uninstall_hook();
     }
 }
 
+/// Polls the foreground window's keyboard layout and updates the tray icon if changed.
+fn poll_and_update_layout(hwnd: HWND) {
+    let lang_id = layouts::get_current_layout();
+    let mut current = CURRENT_LAYOUT.lock().unwrap();
+    if *current == lang_id {
+        return;
+    }
+    *current = lang_id;
+    drop(current);
+
+    let label = icon::lang_id_to_label(lang_id);
+    let new_icon = icon::create_text_icon(&label);
+
+    // Replace tray icon
+    let mut nid = NOTIFYICONDATAW {
+        cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
+        hWnd: hwnd,
+        uID: 1,
+        uFlags: NIF_ICON | NIF_TIP,
+        hIcon: new_icon,
+        ..Default::default()
+    };
+    let tip = format!("LightSwitch ({})", label);
+    for (i, ch) in tip.encode_utf16().enumerate() {
+        if i >= nid.szTip.len() - 1 {
+            break;
+        }
+        nid.szTip[i] = ch;
+    }
+    unsafe { let _ = Shell_NotifyIconW(NIM_MODIFY, &nid); };
+
+    // Destroy previous icon and store new one
+    let mut current_icon = CURRENT_ICON.lock().unwrap();
+    if *current_icon != 0 {
+        icon::destroy_icon(HICON(*current_icon as *mut _));
+    }
+    *current_icon = new_icon.0 as isize;
+}
+
 fn add_tray_icon(hwnd: HWND) {
-    let hicon = load_default_icon();
+    // Create initial icon based on current layout
+    let lang_id = layouts::get_current_layout();
+    *CURRENT_LAYOUT.lock().unwrap() = lang_id;
+    let label = icon::lang_id_to_label(lang_id);
+    let hicon = icon::create_text_icon(&label);
+    *CURRENT_ICON.lock().unwrap() = hicon.0 as isize;
 
     let mut nid = NOTIFYICONDATAW {
         cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
@@ -130,23 +190,6 @@ fn remove_tray_icon(hwnd: HWND) {
     unsafe { Shell_NotifyIconW(NIM_DELETE, &nid) };
 }
 
-fn load_default_icon() -> HICON {
-    let h = unsafe {
-        LoadImageW(
-            None,
-            PCWSTR(32512 as *const u16), // IDI_APPLICATION
-            IMAGE_ICON,
-            0,
-            0,
-            LR_SHARED | LR_DEFAULTSIZE,
-        )
-    };
-    match h {
-        Ok(h) => HICON(h.0),
-        Err(_) => HICON::default(),
-    }
-}
-
 fn show_tray_context_menu(hwnd: HWND) {
     use windows::Win32::UI::WindowsAndMessaging::{
         AppendMenuW, CreatePopupMenu, GetCursorPos, SetForegroundWindow, TrackPopupMenu,
@@ -173,6 +216,12 @@ unsafe extern "system" fn wnd_proc(
     lparam: LPARAM,
 ) -> LRESULT {
     match msg {
+        WM_TIMER => {
+            if wparam.0 == TIMER_LAYOUT_POLL {
+                poll_and_update_layout(hwnd);
+            }
+            LRESULT(0)
+        }
         hooks::WM_APP_HOTKEY => {
             match wparam.0 {
                 hooks::ACTION_SWITCH_LAYOUT => {
