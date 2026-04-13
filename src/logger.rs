@@ -1,11 +1,15 @@
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::mpsc::{channel, Sender};
+use std::sync::OnceLock;
 use std::time::Instant;
 
-static LOG_FILE: Mutex<Option<std::fs::File>> = Mutex::new(None);
-static START_TIME: Mutex<Option<Instant>> = Mutex::new(None);
+/// Global channel to the background logger thread.
+/// Sending a message is near-instant (just pushes to a queue);
+/// the actual file I/O happens on the background thread.
+static LOG_SENDER: OnceLock<Sender<String>> = OnceLock::new();
+static START_TIME: OnceLock<Instant> = OnceLock::new();
 
 /// Returns the log file path: %APPDATA%\LightSwitch\lightswitch.log
 pub fn log_path() -> PathBuf {
@@ -15,7 +19,8 @@ pub fn log_path() -> PathBuf {
         .join("lightswitch.log")
 }
 
-/// Initializes the logger: creates the log file (truncating any existing one).
+/// Initializes the logger: opens the log file (truncating any existing one)
+/// and spawns a background thread that drains incoming log messages.
 /// Should be called once at program startup.
 pub fn init() {
     let path = log_path();
@@ -23,36 +28,56 @@ pub fn init() {
         let _ = std::fs::create_dir_all(parent);
     }
 
-    match OpenOptions::new()
+    let file = match OpenOptions::new()
         .create(true)
         .write(true)
         .truncate(true)
         .open(&path)
     {
-        Ok(file) => {
-            *LOG_FILE.lock().unwrap() = Some(file);
-            *START_TIME.lock().unwrap() = Some(Instant::now());
-            log("=== LightSwitch log started ===");
-        }
+        Ok(f) => f,
         Err(e) => {
             eprintln!("[logger] Failed to open log file {:?}: {}", path, e);
+            return;
         }
-    }
+    };
+
+    let (sender, receiver) = channel::<String>();
+    let _ = LOG_SENDER.set(sender);
+    let _ = START_TIME.set(Instant::now());
+
+    // Background thread: drains the channel and writes to the file.
+    std::thread::Builder::new()
+        .name("lightswitch-logger".to_string())
+        .spawn(move || {
+            let mut file = file;
+            let _ = writeln!(file, "[      0ms] === LightSwitch log started ===");
+            let _ = file.flush();
+
+            while let Ok(msg) = receiver.recv() {
+                let _ = writeln!(file, "{}", msg);
+                // Flush only occasionally to reduce I/O pressure; the channel
+                // buffers messages for us so we don't lose them on crashes.
+                let _ = file.flush();
+            }
+        })
+        .expect("failed to spawn logger thread");
 }
 
-/// Writes a line to both stderr and the log file.
+/// Enqueues a log message. This call is non-blocking and fast — it only
+/// pushes a formatted string into the background channel. Safe to call
+/// from the keyboard hook callback without exceeding Windows' 300ms timeout.
 pub fn log(msg: &str) {
-    eprintln!("{}", msg);
+    let elapsed = START_TIME
+        .get()
+        .map(|t| t.elapsed().as_millis())
+        .unwrap_or(0);
+    let formatted = format!("[{:>7}ms] {}", elapsed, msg);
 
-    let mut guard = LOG_FILE.lock().unwrap();
-    if let Some(file) = guard.as_mut() {
-        let elapsed = START_TIME
-            .lock()
-            .unwrap()
-            .map(|t| t.elapsed().as_millis())
-            .unwrap_or(0);
-        let _ = writeln!(file, "[{:>7}ms] {}", elapsed, msg);
-        let _ = file.flush();
+    if let Some(sender) = LOG_SENDER.get() {
+        let _ = sender.send(formatted);
+    } else {
+        // Fallback if logger wasn't initialized (shouldn't happen in practice)
+        eprintln!("{}", msg);
     }
 }
 

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Asynchronous file logging via a background thread + mpsc channel. The
+  keyboard hook callback no longer blocks on file I/O, fixing rare hotkey
+  ignoring under disk pressure.
+
+## [0.1.0] — 2026-04-13
+
+First local release. Covers the primary use case: type text, select a
+fragment that was typed in the wrong layout, press a hotkey, get it
+converted in place. Cycling through layouts by pressing the hotkey
+repeatedly also works.
+
 ### Added
 - Initial project skeleton: tray icon, message loop, Win32 keyboard hook
 - Detection of installed keyboard layouts via `GetKeyboardLayoutList`

@@ -75,3 +75,54 @@ The native Windows language switcher renders 3-letter abbreviations (УКР,
 causes: bitmap font, ClearType nuances, system DPI scaling, or a special
 font choice. Investigate whether any Win API exposes the same font / sizing
 the language bar uses.
+
+**Key insight from user:** The native Windows language indicator is NOT a
+tray icon — it's a **taskbar widget** with ~24px width, no background, and
+no edge padding. That's why it looks clean with 3 letters. Our tray icon
+is 16×16 with a background box, so we can't directly match it. Options:
+- Accept 16px and optimize font rendering (smaller margins, tighter kerning)
+- Use 2-letter codes on the 16px icon (EN, RU, UA) for readability
+- Explore whether Windows allows custom taskbar widgets (probably not without shell extension)
+
+---
+
+## Installer and standalone dual release
+
+**Status:** idea / not scheduled
+
+Two distribution formats:
+1. **Standalone .exe** — for power users. Just download and run. Current format.
+2. **Installer** — for regular users. Asks:
+   - Install for all users (→ Program Files, needs UAC elevation) or
+     current user only (→ user profile, no elevation)
+   - Offers to configure all layout hotkeys during the setup wizard
+   - Creates Start Menu shortcut and uninstaller
+
+Installer tech options: WiX, NSIS, Inno Setup, or a custom Rust-based
+installer. Consider `cargo-wix` for WiX integration in the Rust build.
+
+---
+
+## Application icon (not tray)
+
+**Status:** idea / not scheduled
+
+LightSwitch needs a proper application icon for:
+- Task Manager process list
+- Alt+Tab switcher
+- Start Menu
+- File Explorer (the .exe itself)
+- Installer artwork
+
+**Theme: light / switching.** Candidates:
+- A **lightbulb** (on/off = switching) — simple, recognizable silhouette
+- A **toggle switch** (up/down) — directly represents switching
+- A **light switch plate** (the wall switch) — matches the app name literally
+- A **lamp** — warm, friendly metaphor
+
+The icon should be clean at 16×16, 32×32, 48×48, and 256×256. Should work
+on both light and dark Windows themes. Consider generating multiple sizes
+from an SVG source.
+
+For the tray icon, the dynamic text abbreviation (УКР/ENG) stays — the app
+icon is only for non-tray contexts.
