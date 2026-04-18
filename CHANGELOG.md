@@ -16,9 +16,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (the Win32 HKL value). This lets the app distinguish multiple keyboard
   layouts that share the same language (e.g. Russian standard vs. Russian
   Typewriter). Config keys are now 8–16 hex chars (e.g. `0x04090409` or
-  `0xfffffffff0a80422`). Old-format configs (`0x0409`) are migrated at
-  load time to the first installed HKL with that `lang_id`; entries for
-  uninstalled languages are silently dropped.
+  `0xfffffffff0a80422`).
+- **Stage 6b — dynamic conversion tables via `ToUnicodeEx`.** Replaces the
+  hardcoded EN/RU/UA character tables with dynamically-built tables for
+  every pair of installed layouts, probed at startup (<10 ms typical) and
+  rebuilt automatically when the user adds or removes a layout in Windows.
+  Source-language detection now uses exclusive-char scoring instead of
+  hardcoded Cyrillic rules, so the app works out of the box with any
+  installed layout (Polish, German, Arabic, etc.).
+- **Word conversion preserves pre-conversion state** — if no selection was
+  active before the hotkey, no selection is left after (cursor at end of
+  pasted text). Selection-based conversion still re-selects for cycling.
+- **Rapid-cycle hotkey fix** — SendInput wrappers (`send_copy`, `send_paste`,
+  `send_select_word_left`, etc.) now check the user's physical modifier
+  state (tracked from real, non-injected hook events) and avoid touching
+  modifiers the user is already holding. Fixes the case where holding Ctrl
+  and rapidly tapping Pause caused the second and subsequent taps to be
+  misinterpreted as plain Pause because our own `Ctrl up` had released it.
+- **Suppression tracking** normalizes VK_CANCEL → VK_PAUSE before inserting
+  into the set, eliminating a short-circuit `||` bug that left stale
+  entries on keyup and silently swallowed subsequent Ctrl+Pause presses.
+- **Build timestamp** is baked into the binary via `build.rs` and printed
+  on the first line of the log, making it easy to confirm which build is
+  running during testing.
 
 ## [0.1.0] — 2026-04-13
 

@@ -67,15 +67,6 @@ pub fn is_installed(id: HklId) -> bool {
     get_installed_layouts().iter().any(|l| l.hkl_id == id)
 }
 
-/// Finds the first installed HKL whose lang_id matches (used for migrating
-/// old configs that stored only lang_id).
-pub fn find_first_by_lang_id(lang_id: u16) -> Option<HklId> {
-    get_installed_layouts()
-        .into_iter()
-        .find(|l| l.lang_id == lang_id)
-        .map(|l| l.hkl_id)
-}
-
 /// Switches the keyboard layout for the foreground window to the given HKL.
 pub fn switch_layout(id: HklId) -> bool {
     if !is_installed(id) {

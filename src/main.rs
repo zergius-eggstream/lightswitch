@@ -10,6 +10,7 @@ mod icon;
 mod input;
 mod layouts;
 mod logger;
+mod tables;
 mod ui;
 
 use config::Config;
@@ -46,6 +47,10 @@ fn main() {
     for layout in &installed {
         log!("  - {} (HKL=0x{:08X})", layout.name, layout.hkl_id);
     }
+
+    // Build conversion tables for all installed layouts.
+    let installed_ids: Vec<layouts::HklId> = installed.iter().map(|l| l.hkl_id).collect();
+    tables::rebuild(&installed_ids);
 
     // Load config and apply hotkey bindings
     let config = Config::load();
@@ -114,7 +119,15 @@ fn main() {
 }
 
 /// Polls the foreground window's keyboard layout and updates the tray icon if changed.
+/// Also detects changes to the installed-layout list and rebuilds conversion tables.
 fn poll_and_update_layout(hwnd: HWND) {
+    // Detect installed-layout changes (e.g. user added/removed a layout).
+    let installed_ids = layouts::get_layout_order();
+    if tables::needs_rebuild(&installed_ids) {
+        log!("Installed layouts changed — rebuilding tables");
+        tables::rebuild(&installed_ids);
+    }
+
     let hkl_id = layouts::get_current_layout();
     let mut current = CURRENT_LAYOUT.lock().unwrap();
     if *current == hkl_id {

@@ -50,7 +50,12 @@ pub fn init() {
         .name("lightswitch-logger".to_string())
         .spawn(move || {
             let mut file = file;
-            let _ = writeln!(file, "[      0ms] === LightSwitch log started ===");
+            let _ = writeln!(
+                file,
+                "[      0ms] === LightSwitch v{} (built {}) log started ===",
+                env!("CARGO_PKG_VERSION"),
+                env!("BUILD_TIMESTAMP")
+            );
             let _ = file.flush();
 
             while let Ok(msg) = receiver.recv() {

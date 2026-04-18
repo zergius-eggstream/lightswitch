@@ -11,11 +11,23 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use crate::hotkeys::{self, Modifiers};
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 static HOOK_HANDLE: Mutex<Option<isize>> = Mutex::new(None);
 static MAIN_HWND: Mutex<Option<isize>> = Mutex::new(None);
-static HOOK_SUSPENDED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static HOOK_SUSPENDED: AtomicBool = AtomicBool::new(false);
+
+/// Tracks whether the user is currently physically holding Ctrl/Shift/Alt.
+/// Updated on non-injected modifier key events in the hook, so the values
+/// reflect the user's actual state (not whatever SendInput injected).
+static USER_CTRL: AtomicBool = AtomicBool::new(false);
+static USER_SHIFT: AtomicBool = AtomicBool::new(false);
+static USER_ALT: AtomicBool = AtomicBool::new(false);
+
+pub fn user_holds_ctrl() -> bool { USER_CTRL.load(Ordering::Relaxed) }
+pub fn user_holds_shift() -> bool { USER_SHIFT.load(Ordering::Relaxed) }
+pub fn user_holds_alt() -> bool { USER_ALT.load(Ordering::Relaxed) }
 
 /// Set of VK codes for which we have suppressed a keydown.
 /// We swallow auto-repeat keydowns and the matching keyup for these keys,
@@ -137,6 +149,21 @@ unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARA
             return unsafe { CallNextHookEx(None, code, wparam, lparam) };
         }
 
+        // Track user's physical modifier state (non-injected events only,
+        // which is why this is below the LLKHF_INJECTED check above).
+        match VIRTUAL_KEY(vk) {
+            VK_CONTROL | VK_LCONTROL | VK_RCONTROL => {
+                USER_CTRL.store(msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN, Ordering::Relaxed);
+            }
+            VK_SHIFT | VK_LSHIFT | VK_RSHIFT => {
+                USER_SHIFT.store(msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN, Ordering::Relaxed);
+            }
+            VK_MENU | VK_LMENU | VK_RMENU => {
+                USER_ALT.store(msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN, Ordering::Relaxed);
+            }
+            _ => {}
+        }
+
         match msg {
             WM_KEYDOWN | WM_SYSKEYDOWN => {
                 if is_modifier_key(vk) {
@@ -158,13 +185,15 @@ unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARA
                     *PENDING_MODIFIER.lock().unwrap() = None;
 
                     // Windows quirk: Ctrl+Pause produces VK_CANCEL (0x03) instead of VK_PAUSE.
+                    // Always work with the normalized VK so the suppression set has a
+                    // single canonical entry per physical key.
                     let normalized_vk = if vk == 0x03 { 0x13 } else { vk };
 
                     // If we already suppressed this key (auto-repeat), just swallow it.
                     {
                         let suppressed = suppressed_keys();
                         if let Some(set) = suppressed.as_ref() {
-                            if set.contains(&normalized_vk) || set.contains(&vk) {
+                            if set.contains(&normalized_vk) {
                                 return LRESULT(1);
                             }
                         }
@@ -179,14 +208,13 @@ unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARA
                         let mut suppressed = suppressed_keys();
                         if let Some(set) = suppressed.as_mut() {
                             set.insert(normalized_vk);
-                            set.insert(vk); // also raw vk in case of normalization
                         }
                         return LRESULT(1); // Suppress
                     }
                 }
             }
             WM_KEYUP | WM_SYSKEYUP => {
-                // Normalize VK_CANCEL → VK_PAUSE for symmetry with keydown handling
+                // Normalize VK_CANCEL → VK_PAUSE for symmetry with keydown handling.
                 let normalized_vk = if vk == 0x03 { 0x13 } else { vk };
 
                 // If we suppressed the keydown for this key, also suppress the keyup
@@ -194,7 +222,7 @@ unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARA
                 {
                     let mut suppressed = suppressed_keys();
                     if let Some(set) = suppressed.as_mut() {
-                        if set.remove(&normalized_vk) || set.remove(&vk) {
+                        if set.remove(&normalized_vk) {
                             return LRESULT(1);
                         }
                     }
