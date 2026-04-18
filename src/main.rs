@@ -34,7 +34,7 @@ const IDM_EXIT: u16 = 1002;
 const TIMER_LAYOUT_POLL: usize = 1;
 const TIMER_LAYOUT_POLL_MS: u32 = 500;
 
-static CURRENT_LAYOUT: Mutex<u16> = Mutex::new(0);
+static CURRENT_LAYOUT: Mutex<layouts::HklId> = Mutex::new(0);
 static CURRENT_ICON: Mutex<isize> = Mutex::new(0);
 
 fn main() {
@@ -44,7 +44,7 @@ fn main() {
     let installed = layouts::get_installed_layouts();
     log!("Detected {} keyboard layout(s)", installed.len());
     for layout in &installed {
-        log!("  - {} (0x{:04X})", layout.name, layout.lang_id);
+        log!("  - {} (HKL=0x{:08X})", layout.name, layout.hkl_id);
     }
 
     // Load config and apply hotkey bindings
@@ -115,15 +115,15 @@ fn main() {
 
 /// Polls the foreground window's keyboard layout and updates the tray icon if changed.
 fn poll_and_update_layout(hwnd: HWND) {
-    let lang_id = layouts::get_current_layout();
+    let hkl_id = layouts::get_current_layout();
     let mut current = CURRENT_LAYOUT.lock().unwrap();
-    if *current == lang_id {
+    if *current == hkl_id {
         return;
     }
-    *current = lang_id;
+    *current = hkl_id;
     drop(current);
 
-    let label = icon::lang_id_to_label(lang_id);
+    let label = icon::hkl_to_label(hkl_id);
     let new_icon = icon::create_text_icon(&label);
 
     // Replace tray icon
@@ -154,9 +154,9 @@ fn poll_and_update_layout(hwnd: HWND) {
 
 fn add_tray_icon(hwnd: HWND) {
     // Create initial icon based on current layout
-    let lang_id = layouts::get_current_layout();
-    *CURRENT_LAYOUT.lock().unwrap() = lang_id;
-    let label = icon::lang_id_to_label(lang_id);
+    let hkl_id = layouts::get_current_layout();
+    *CURRENT_LAYOUT.lock().unwrap() = hkl_id;
+    let label = icon::hkl_to_label(hkl_id);
     let hicon = icon::create_text_icon(&label);
     *CURRENT_ICON.lock().unwrap() = hicon.0 as isize;
 
@@ -243,8 +243,9 @@ unsafe fn wnd_proc_inner(
         hooks::WM_APP_HOTKEY => {
             match wparam.0 {
                 hooks::ACTION_SWITCH_LAYOUT => {
-                    let lang_id = lparam.0 as u16;
-                    layouts::switch_layout(lang_id);
+                    // LPARAM was packed from HklId (u64) via isize cast
+                    let hkl_id = lparam.0 as u64;
+                    layouts::switch_layout(hkl_id);
                 }
                 hooks::ACTION_CONVERT_TEXT => {
                     conversion::perform_conversion();

@@ -1,7 +1,7 @@
 use crate::config::{self, Config};
 use crate::hooks;
 use crate::hotkeys::Modifiers;
-use crate::layouts;
+use crate::layouts::{self, HklId};
 use std::sync::Mutex;
 use windows::core::w;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
@@ -26,7 +26,7 @@ const BM_GETCHECK_MSG: u32 = 0x00F0;
 
 struct SettingsState {
     config: Config,
-    layout_ids: Vec<u16>,
+    layout_hkls: Vec<HklId>,
     capturing_control: Option<u16>,
 }
 
@@ -50,11 +50,11 @@ pub fn show_settings() {
 fn create_settings_window() {
     let installed = layouts::get_installed_layouts();
     let config = Config::load();
-    let layout_ids: Vec<u16> = installed.iter().map(|l| l.lang_id).collect();
+    let layout_hkls: Vec<HklId> = installed.iter().map(|l| l.hkl_id).collect();
 
     *STATE.lock().unwrap() = Some(SettingsState {
         config: config.clone(),
-        layout_ids: layout_ids.clone(),
+        layout_hkls: layout_hkls.clone(),
         capturing_control: None,
     });
 
@@ -108,7 +108,7 @@ fn create_settings_window() {
             let control_id = ID_LAYOUT_HOTKEY_BASE + i as u16;
             let hotkey_str = config
                 .layouts
-                .get(&format!("0x{:04x}", layout.lang_id))
+                .get(&config::format_layout_key(layout.hkl_id))
                 .cloned()
                 .unwrap_or_default();
 
@@ -357,9 +357,8 @@ fn finish_capture(hwnd: HWND, state: &mut SettingsState, control_id: u16, vk: u1
         state.config.conversion.word_hotkey = key_name;
     } else if control_id >= ID_LAYOUT_HOTKEY_BASE {
         let idx = (control_id - ID_LAYOUT_HOTKEY_BASE) as usize;
-        if let Some(&lang_id) = state.layout_ids.get(idx) {
-            let key = format!("0x{:04x}", lang_id);
-            state.config.layouts.insert(key, key_name);
+        if let Some(&hkl_id) = state.layout_hkls.get(idx) {
+            state.config.layouts.insert(config::format_layout_key(hkl_id), key_name);
         }
     }
 
@@ -377,9 +376,8 @@ fn clear_hotkey(hwnd: HWND, control_id: u16) {
         s.config.conversion.word_hotkey.clear();
     } else if control_id >= ID_LAYOUT_HOTKEY_BASE {
         let idx = (control_id - ID_LAYOUT_HOTKEY_BASE) as usize;
-        if let Some(&lang_id) = s.layout_ids.get(idx) {
-            let key = format!("0x{:04x}", lang_id);
-            s.config.layouts.remove(&key);
+        if let Some(&hkl_id) = s.layout_hkls.get(idx) {
+            s.config.layouts.remove(&config::format_layout_key(hkl_id));
         }
     }
     eprintln!("[settings] Cleared hotkey for control {}", control_id);
@@ -393,14 +391,14 @@ fn refresh_all_buttons(hwnd: HWND, state: &SettingsState) {
     // Collect all assignments: (control_id, key_name, display_name)
     let mut assignments: Vec<(u16, String, String)> = Vec::new();
 
-    for (i, &lang_id) in state.layout_ids.iter().enumerate() {
-        let layout_key = format!("0x{:04x}", lang_id);
+    for (i, &hkl_id) in state.layout_hkls.iter().enumerate() {
+        let layout_key = config::format_layout_key(hkl_id);
         let hotkey_str = state.config.layouts.get(&layout_key).cloned().unwrap_or_default();
         let name = layouts::get_installed_layouts()
             .iter()
-            .find(|l| l.lang_id == lang_id)
+            .find(|l| l.hkl_id == hkl_id)
             .map(|l| l.name.clone())
-            .unwrap_or_else(|| format!("0x{:04X}", lang_id));
+            .unwrap_or_else(|| format!("0x{:08X}", hkl_id));
         assignments.push((ID_LAYOUT_HOTKEY_BASE + i as u16, hotkey_str, name));
     }
 
@@ -463,8 +461,8 @@ fn has_conflicts(state: &SettingsState) -> bool {
         seen.push(&state.config.conversion.word_hotkey);
     }
 
-    for &lang_id in &state.layout_ids {
-        let key = format!("0x{:04x}", lang_id);
+    for &hkl_id in &state.layout_hkls {
+        let key = config::format_layout_key(hkl_id);
         if let Some(hotkey_str) = state.config.layouts.get(&key) {
             if !hotkey_str.is_empty() {
                 if seen.contains(&hotkey_str.as_str()) {
@@ -487,19 +485,19 @@ fn find_conflict(state: &SettingsState, current_control: u16, key_name: &str) ->
     }
 
     // Check layout hotkeys
-    for (i, &lang_id) in state.layout_ids.iter().enumerate() {
+    for (i, &hkl_id) in state.layout_hkls.iter().enumerate() {
         let layout_control = ID_LAYOUT_HOTKEY_BASE + i as u16;
         if layout_control == current_control {
             continue;
         }
-        let layout_key = format!("0x{:04x}", lang_id);
+        let layout_key = config::format_layout_key(hkl_id);
         if let Some(existing) = state.config.layouts.get(&layout_key) {
             if existing == key_name {
                 let name = layouts::get_installed_layouts()
                     .iter()
-                    .find(|l| l.lang_id == lang_id)
+                    .find(|l| l.hkl_id == hkl_id)
                     .map(|l| l.name.clone())
-                    .unwrap_or_else(|| format!("0x{:04X}", lang_id));
+                    .unwrap_or_else(|| format!("0x{:08X}", hkl_id));
                 return Some(name);
             }
         }

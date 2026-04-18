@@ -92,12 +92,13 @@ fn post_action(action: &hotkeys::HotkeyAction) -> bool {
     };
     let hwnd = HWND(hwnd_val as *mut _);
     let result = match action {
-        hotkeys::HotkeyAction::SwitchLayout(lang_id) => unsafe {
+        hotkeys::HotkeyAction::SwitchLayout(hkl_id) => unsafe {
+            // LPARAM is isize (64-bit on x64), HklId is u64 — cast is lossless in practice
             PostMessageW(
                 Some(hwnd),
                 WM_APP_HOTKEY,
                 WPARAM(ACTION_SWITCH_LAYOUT),
-                LPARAM(*lang_id as isize),
+                LPARAM(*hkl_id as isize),
             )
         },
         hotkeys::HotkeyAction::ConvertText => unsafe {

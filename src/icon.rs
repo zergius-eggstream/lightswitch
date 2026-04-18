@@ -10,10 +10,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CreateIconIndirect, DestroyIcon, GetSystemMetrics, HICON, ICONINFO, SM_CXSMICON, SM_CYSMICON,
 };
 
-/// Returns a short label for a layout language ID using Windows locale data.
+/// Returns a short label for a layout using Windows locale data.
 /// Returns the 3-letter native abbreviation (e.g. "УКР", "РУС", "ENG").
-pub fn lang_id_to_label(lang_id: u16) -> String {
-    crate::layouts::lang_id_to_abbrev(lang_id)
+pub fn hkl_to_label(id: crate::layouts::HklId) -> String {
+    crate::layouts::lang_id_to_abbrev(crate::layouts::hkl_lang_id(id))
 }
 
 /// Creates a tray icon with the given short text label.

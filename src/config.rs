@@ -1,4 +1,5 @@
 use crate::hotkeys::{Hotkey, HotkeyAction, HotkeyBinding, Modifiers};
+use crate::layouts::{self, HklId};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -82,9 +83,42 @@ impl Config {
 
     pub fn load() -> Self {
         let path = Self::path();
-        match std::fs::read_to_string(&path) {
+        let mut config: Self = match std::fs::read_to_string(&path) {
             Ok(content) => toml::from_str(&content).unwrap_or_default(),
             Err(_) => Self::default(),
+        };
+        config.migrate_layout_keys();
+        config
+    }
+
+    /// Rewrites layout keys in old format (4-hex lang_id) to the new format
+    /// (full HKL as hex). Silently drops entries whose lang_id is not installed.
+    fn migrate_layout_keys(&mut self) {
+        let keys: Vec<String> = self.layouts.keys().cloned().collect();
+        for key in keys {
+            let hex = key.trim_start_matches("0x").trim_start_matches("0X");
+            let Ok(parsed) = u64::from_str_radix(hex, 16) else {
+                continue;
+            };
+            if parsed <= 0xFFFF {
+                // Old format — migrate
+                let lang_id = parsed as u16;
+                if let Some(new_id) = layouts::find_first_by_lang_id(lang_id) {
+                    let new_key = format_layout_key(new_id);
+                    if new_key != key {
+                        if let Some(value) = self.layouts.remove(&key) {
+                            self.layouts.insert(new_key, value);
+                        }
+                    }
+                } else {
+                    // lang_id not installed — drop the entry
+                    self.layouts.remove(&key);
+                    crate::logger::log(&format!(
+                        "[config] dropped binding for uninstalled lang 0x{:04X}",
+                        lang_id
+                    ));
+                }
+            }
         }
     }
 
@@ -99,6 +133,11 @@ impl Config {
     }
 
     /// Creates hotkey bindings from the config.
+    ///
+    /// Layout keys in the config may be in one of two formats:
+    /// - **New:** full HKL as hex (up to 16 chars, typically 8), e.g. `"0x04090409"`
+    /// - **Old (pre-0.2):** language ID only (4 hex chars), e.g. `"0x0409"` —
+    ///   migrated at load time to the first installed HKL with that lang_id
     pub fn to_bindings(&self) -> Vec<HotkeyBinding> {
         let mut bindings = Vec::new();
 
@@ -106,14 +145,17 @@ impl Config {
             if hotkey_str.is_empty() {
                 continue;
             }
-            let lang_id = match u16::from_str_radix(layout_id_str.trim_start_matches("0x"), 16) {
-                Ok(id) => id,
-                Err(_) => continue,
+            let Some(hkl_id) = parse_layout_key(layout_id_str) else {
+                crate::logger::log(&format!(
+                    "[config] skipping binding: can't parse layout key '{}'",
+                    layout_id_str
+                ));
+                continue;
             };
             if let Some(hotkey) = parse_hotkey(hotkey_str) {
                 bindings.push(HotkeyBinding {
                     hotkey,
-                    action: HotkeyAction::SwitchLayout(lang_id),
+                    action: HotkeyAction::SwitchLayout(hkl_id),
                 });
             }
         }
@@ -138,6 +180,30 @@ impl Config {
 
         bindings
     }
+}
+
+/// Parses a layout key from config. Accepts both new (full HKL, 5–16 hex chars)
+/// and old (lang_id only, up to 4 hex chars) formats. Returns the HklId.
+///
+/// Old-format keys are migrated by finding the first installed HKL whose
+/// lang_id matches. If no installed layout matches, returns None.
+pub fn parse_layout_key(s: &str) -> Option<HklId> {
+    let hex = s.trim_start_matches("0x").trim_start_matches("0X");
+    let parsed = u64::from_str_radix(hex, 16).ok()?;
+
+    // Heuristic: if only the low 16 bits are set, treat as old-format lang_id
+    // and migrate to the first installed HKL with that lang_id.
+    if parsed <= 0xFFFF {
+        let lang_id = parsed as u16;
+        layouts::find_first_by_lang_id(lang_id)
+    } else {
+        Some(parsed)
+    }
+}
+
+/// Formats an HklId for use as a config key (e.g. `"0x04090409"`).
+pub fn format_layout_key(id: HklId) -> String {
+    format!("0x{:08x}", id)
 }
 
 /// Parses a hotkey string like "LCtrl", "RCtrl", "Pause", "Ctrl+1", "Shift+CapsLock".

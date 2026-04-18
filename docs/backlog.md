@@ -86,6 +86,27 @@ is 16×16 with a background box, so we can't directly match it. Options:
 
 ---
 
+## "About" menu item in tray icon
+
+**Status:** idea / not scheduled
+
+Add an **About** entry to the tray context menu (between Settings and Exit)
+that opens a small dialog with:
+- One-line description of the program ("Lightweight keyboard layout switcher with text conversion")
+- Version (e.g. `0.1.0`)
+- Release date
+- Link to the repository (when hosted on GitHub)
+- Link to the releases page (when available)
+- Copyright / license line
+
+Implementation notes:
+- Version should come from `env!("CARGO_PKG_VERSION")` so it stays in sync with `Cargo.toml`
+- Release date should be baked in at build time via a `build.rs` script or a build-time env var
+- Simple Win32 `MessageBoxW` dialog might be enough for a first iteration; a custom window with clickable links later
+- Links should open in the default browser via `ShellExecuteW` with the "open" verb
+
+---
+
 ## Installer and standalone dual release
 
 **Status:** idea / not scheduled

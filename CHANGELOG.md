@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Asynchronous file logging via a background thread + mpsc channel. The
   keyboard hook callback no longer blocks on file I/O, fixing rare hotkey
   ignoring under disk pressure.
+- **Stage 6a — layout identification by full HKL.** Internal APIs and
+  config keys migrated from 16-bit `lang_id` to the full 64-bit `HklId`
+  (the Win32 HKL value). This lets the app distinguish multiple keyboard
+  layouts that share the same language (e.g. Russian standard vs. Russian
+  Typewriter). Config keys are now 8–16 hex chars (e.g. `0x04090409` or
+  `0xfffffffff0a80422`). Old-format configs (`0x0409`) are migrated at
+  load time to the first installed HKL with that `lang_id`; entries for
+  uninstalled languages are silently dropped.
 
 ## [0.1.0] — 2026-04-13
 

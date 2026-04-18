@@ -1,16 +1,19 @@
-use crate::{clipboard, input, layouts, log};
+use crate::layouts::{self, HklId};
+use crate::{clipboard, input, log};
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
-/// Conversion table: maps (from_layout, to_layout) -> char-to-char mapping.
-/// Layout IDs: 0x0409 = EN, 0x0419 = RU, 0x0422 = UA
+/// Conversion table: maps (from_lang_id, to_lang_id) -> char-to-char mapping.
+/// Tables are keyed on the language ID (low 16 bits of HKL). In Stage 6b this
+/// will be replaced by dynamic tables built via `ToUnicodeEx` per (HKL, HKL)
+/// pair, which will naturally distinguish multiple layouts per language.
 type ConversionMap = HashMap<(u16, u16), HashMap<char, char>>;
 
 static TABLES: LazyLock<ConversionMap> = LazyLock::new(build_tables);
 
 /// Converts text from one layout to another using built-in character tables.
-pub fn convert(text: &str, from_layout: u16, to_layout: u16) -> Option<String> {
-    let key = (from_layout, to_layout);
+fn convert_by_lang(text: &str, from_lang: u16, to_lang: u16) -> Option<String> {
+    let key = (from_lang, to_lang);
     let table = TABLES.get(&key)?;
 
     Some(
@@ -20,8 +23,8 @@ pub fn convert(text: &str, from_layout: u16, to_layout: u16) -> Option<String> {
     )
 }
 
-/// Returns all supported layout IDs.
-pub fn supported_layouts() -> Vec<u16> {
+/// Returns the language IDs we currently have hardcoded conversion tables for.
+fn supported_lang_ids() -> Vec<u16> {
     vec![0x0409, 0x0419, 0x0422]
 }
 
@@ -55,31 +58,30 @@ fn detect_text_layout(text: &str) -> Option<u16> {
 
 /// Attempts cyclic conversion: detects source layout from text,
 /// falls back to current keyboard layout for ambiguous text.
-/// Returns the converted text and the target layout ID.
-pub fn convert_cyclic(text: &str, current_layout: u16, layout_order: &[u16]) -> (String, u16) {
-    let detected = detect_text_layout(text);
-    // Use detected layout if definitive, otherwise fall back to current keyboard layout.
-    // This handles ambiguous text (e.g. common Cyrillic chars shared by RU and UA).
-    let source = match detected {
-        Some(lang) => lang,
-        None => current_layout,
-    };
+/// Returns the converted text and the target HklId.
+///
+/// `layout_order` should already be filtered to HKLs whose lang_id is in
+/// `supported_lang_ids()`.
+pub fn convert_cyclic(text: &str, current_layout: HklId, layout_order: &[HklId]) -> (String, HklId) {
+    let current_lang = layouts::hkl_lang_id(current_layout);
+    let detected_lang = detect_text_layout(text);
+    let source_lang = detected_lang.unwrap_or(current_lang);
 
-    eprintln!("[convert] detected={:?}, using source=0x{:04X}", detected.map(|l| format!("0x{:04X}", l)), source);
-
+    // Find the source position in the ordered list by matching its lang_id
+    // (multiple HKLs can share a lang_id; we take the first match for now).
     let current_idx = layout_order
         .iter()
-        .position(|&id| id == source)
+        .position(|&id| layouts::hkl_lang_id(id) == source_lang)
         .unwrap_or(0);
 
     let next_idx = (current_idx + 1) % layout_order.len();
-    let target = layout_order[next_idx];
+    let target_hkl = layout_order[next_idx];
+    let target_lang = layouts::hkl_lang_id(target_hkl);
 
     // Always move to the target layout, even if text doesn't change
     // (e.g. ambiguous Cyrillic "Привет" — same in RU and UA).
-    // This ensures the cycle progresses via layout switch.
-    let converted = convert(text, source, target).unwrap_or_else(|| text.to_string());
-    (converted, target)
+    let converted = convert_by_lang(text, source_lang, target_lang).unwrap_or_else(|| text.to_string());
+    (converted, target_hkl)
 }
 
 /// Converts the currently selected text via clipboard.
@@ -157,10 +159,10 @@ fn convert_and_paste(text: &str) -> bool {
     let current_layout = layouts::get_current_layout();
     let layout_order = layouts::get_layout_order();
 
-    let supported = supported_layouts();
-    let active_order: Vec<u16> = layout_order
+    let supported_langs = supported_lang_ids();
+    let active_order: Vec<HklId> = layout_order
         .iter()
-        .filter(|id| supported.contains(id))
+        .filter(|id| supported_langs.contains(&layouts::hkl_lang_id(**id)))
         .copied()
         .collect();
 
@@ -176,7 +178,7 @@ fn convert_and_paste(text: &str) -> bool {
     };
 
     let (converted, target) = convert_cyclic(text, source, &active_order);
-    log!("[convert] '{}' -> '{}' (0x{:04X} → 0x{:04X})",
+    log!("[convert] '{}' -> '{}' (0x{:08X} → 0x{:08X})",
         truncate(text, 40), truncate(&converted, 40), source, target);
 
     clipboard::set_text(&converted);

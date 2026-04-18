@@ -63,8 +63,8 @@ impl fmt::Display for Hotkey {
 /// An action triggered by a hotkey.
 #[derive(Debug, Clone)]
 pub enum HotkeyAction {
-    /// Switch to a specific keyboard layout (by lang_id).
-    SwitchLayout(u16),
+    /// Switch to a specific keyboard layout (by full HKL).
+    SwitchLayout(crate::layouts::HklId),
     /// Convert selected/all text cyclically.
     ConvertText,
     /// Convert the word to the left of the cursor (or selection) cyclically.
