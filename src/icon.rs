@@ -1,3 +1,4 @@
+use crate::colors::{self, Color};
 use windows::core::w;
 use windows::Win32::Foundation::{COLORREF, RECT};
 use windows::Win32::Graphics::Gdi::{
@@ -10,15 +11,27 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CreateIconIndirect, DestroyIcon, GetSystemMetrics, HICON, ICONINFO, SM_CXSMICON, SM_CYSMICON,
 };
 
+/// Converts our `0x00RRGGBB` color to Win32 `COLORREF` (which is `0x00BBGGRR`).
+fn color_to_colorref(color: Color) -> COLORREF {
+    let r = (color >> 16) & 0xFF;
+    let g = (color >> 8) & 0xFF;
+    let b = color & 0xFF;
+    COLORREF((b << 16) | (g << 8) | r)
+}
+
 /// Returns a short label for a layout using Windows locale data.
 /// Returns the 3-letter native abbreviation (e.g. "УКР", "РУС", "ENG").
 pub fn hkl_to_label(id: crate::layouts::HklId) -> String {
     crate::layouts::lang_id_to_abbrev(crate::layouts::hkl_lang_id(id))
 }
 
-/// Creates a tray icon with the given short text label.
-/// Returns an HICON that the caller is responsible for destroying via `DestroyIcon`.
-pub fn create_text_icon(text: &str) -> HICON {
+/// Creates a tray icon with the given text label, drawn on a solid background
+/// of the given color. Text color is chosen automatically (black or white)
+/// based on background luminance.
+/// The returned HICON must be freed via [`destroy_icon`].
+pub fn create_text_icon(text: &str, bg_color: Color) -> HICON {
+    let fg_color = colors::text_color_for(bg_color);
+
     unsafe {
         let cx = GetSystemMetrics(SM_CXSMICON);
         let cy = GetSystemMetrics(SM_CYSMICON);
@@ -26,30 +39,22 @@ pub fn create_text_icon(text: &str) -> HICON {
         let screen_dc = GetDC(None);
         let mem_dc = CreateCompatibleDC(Some(screen_dc));
 
-        // Color bitmap for the icon
         let color_bmp = CreateCompatibleBitmap(screen_dc, cx, cy);
         let mask_bmp = CreateCompatibleBitmap(screen_dc, cx, cy);
 
         let old_bmp = SelectObject(mem_dc, color_bmp.into());
 
-        // Background: dark blue
-        let bg_brush = CreateSolidBrush(COLORREF(0x00802040)); // BBGGRR — dark purple/blue
+        let bg_brush = CreateSolidBrush(color_to_colorref(bg_color));
         let mut rect = RECT { left: 0, top: 0, right: cx, bottom: cy };
         FillRect(mem_dc, &rect, bg_brush);
         let _ = DeleteObject(bg_brush.into());
 
         // Font sized to fit 3 characters into the icon width.
-        // Use ~60% of icon height for font height to leave room for 3 chars.
         let font_height = (cy * 60) / 100;
         let font = CreateFontW(
-            font_height,
-            0,
-            0,
-            0,
+            font_height, 0, 0, 0,
             FW_BOLD.0 as i32,
-            0,
-            0,
-            0,
+            0, 0, 0,
             DEFAULT_CHARSET,
             OUT_DEFAULT_PRECIS,
             CLIP_DEFAULT_PRECIS,
@@ -60,7 +65,7 @@ pub fn create_text_icon(text: &str) -> HICON {
         let old_font = SelectObject(mem_dc, font.into());
 
         SetBkMode(mem_dc, TRANSPARENT);
-        SetTextColor(mem_dc, COLORREF(0x00FFFFFF)); // white
+        SetTextColor(mem_dc, color_to_colorref(fg_color));
 
         let mut text_wide: Vec<u16> = text.encode_utf16().collect();
         DrawTextW(

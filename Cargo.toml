@@ -1,6 +1,6 @@
 [package]
 name = "lightswitch"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 
 [dependencies.windows]
@@ -18,11 +18,16 @@ features = [
     "Win32_System_Registry",       # Autostart
     "Win32_Globalization",         # GetLocaleInfoW
     "Win32_UI_TextServices",       # GetForegroundWindow thread layout
+    "Win32_UI_Controls",           # DRAWITEMSTRUCT, ODS_FOCUS
+    "Win32_UI_Controls_Dialogs",   # ChooseColorW
 ]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
+
+[build-dependencies]
+winresource = "0.1"
 
 [profile.release]
 opt-level = "s"     # Optimize for size

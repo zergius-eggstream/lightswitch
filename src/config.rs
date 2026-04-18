@@ -1,3 +1,4 @@
+use crate::colors::{self, Color};
 use crate::hotkeys::{Hotkey, HotkeyAction, HotkeyBinding, Modifiers};
 use crate::layouts::HklId;
 use serde::{Deserialize, Serialize};
@@ -10,6 +11,10 @@ pub struct Config {
     pub general: GeneralConfig,
     #[serde(default)]
     pub layouts: HashMap<String, String>,
+    /// Per-layout tray-icon color overrides (HKL hex → "#RRGGBB"). Layouts
+    /// without an entry use the default palette by installation order.
+    #[serde(default)]
+    pub layout_colors: HashMap<String, String>,
     #[serde(default)]
     pub conversion: ConversionConfig,
 }
@@ -68,6 +73,7 @@ impl Default for Config {
         Self {
             general: GeneralConfig::default(),
             layouts: HashMap::new(),
+            layout_colors: HashMap::new(),
             conversion: ConversionConfig::default(),
         }
     }
@@ -146,6 +152,21 @@ impl Config {
         }
 
         bindings
+    }
+
+    /// Builds the per-HKL color override map from the config.
+    pub fn to_color_overrides(&self) -> HashMap<HklId, Color> {
+        let mut map = HashMap::new();
+        for (key, value) in &self.layout_colors {
+            let Some(hkl) = parse_layout_key(key) else {
+                continue;
+            };
+            let Some(color) = colors::parse_hex(value) else {
+                continue;
+            };
+            map.insert(hkl, color);
+        }
+        map
     }
 }
 

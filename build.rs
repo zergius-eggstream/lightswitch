@@ -11,6 +11,24 @@ fn main() {
 
     println!("cargo:rustc-env=BUILD_UNIX_TS={}", secs);
     println!("cargo:rustc-env=BUILD_TIMESTAMP={}", format_utc(secs));
+
+    // Embed the application icon in the EXE (Windows only). Silently skips if
+    // assets/icon.ico is missing so the build still works before the icon is
+    // generated (run `cargo run --example gen_icon` to create it).
+    #[cfg(target_os = "windows")]
+    {
+        let icon_path = std::path::Path::new("assets/icon.ico");
+        if icon_path.exists() {
+            let mut res = winresource::WindowsResource::new();
+            res.set_icon("assets/icon.ico");
+            if let Err(e) = res.compile() {
+                println!("cargo:warning=Failed to embed icon: {}", e);
+            }
+            println!("cargo:rerun-if-changed=assets/icon.ico");
+        } else {
+            println!("cargo:warning=assets/icon.ico not found — EXE will have no icon");
+        }
+    }
 }
 
 /// Formats a unix timestamp as "YYYY-MM-DD HH:MM:SS UTC" (no deps).

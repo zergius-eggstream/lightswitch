@@ -62,6 +62,10 @@ pub fn set_main_hwnd(hwnd: HWND) {
     *MAIN_HWND.lock().unwrap() = Some(hwnd.0 as isize);
 }
 
+pub fn get_main_hwnd() -> Option<isize> {
+    *MAIN_HWND.lock().unwrap()
+}
+
 pub fn install_hook() -> windows::core::Result<()> {
     unsafe {
         let hook = SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_proc), None, 0)?;

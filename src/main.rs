@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod clipboard;
+mod colors;
 mod config;
 mod conversion;
 mod hooks;
@@ -35,8 +36,13 @@ const IDM_EXIT: u16 = 1002;
 const TIMER_LAYOUT_POLL: usize = 1;
 const TIMER_LAYOUT_POLL_MS: u32 = 500;
 
+/// Exported so the settings UI can post it when the user picks a new color,
+/// forcing an immediate tray-icon rebuild.
+pub const WM_APP_REFRESH_ICON: u32 = WM_USER + 2;
+
 static CURRENT_LAYOUT: Mutex<layouts::HklId> = Mutex::new(0);
 static CURRENT_ICON: Mutex<isize> = Mutex::new(0);
+static CURRENT_ICON_COLOR: Mutex<colors::Color> = Mutex::new(0);
 
 fn main() {
     logger::init();
@@ -52,7 +58,7 @@ fn main() {
     let installed_ids: Vec<layouts::HklId> = installed.iter().map(|l| l.hkl_id).collect();
     tables::rebuild(&installed_ids);
 
-    // Load config and apply hotkey bindings
+    // Load config and apply hotkey bindings + color overrides
     let config = Config::load();
     let bindings = config.to_bindings();
     if bindings.is_empty() {
@@ -61,6 +67,7 @@ fn main() {
         log!("Loaded {} hotkey binding(s)", bindings.len());
     }
     hotkeys::set_bindings(bindings);
+    colors::set_overrides(config.to_color_overrides());
 
     match hooks::install_hook() {
         Ok(_) => log!("Keyboard hook installed"),
@@ -118,8 +125,20 @@ fn main() {
     }
 }
 
-/// Polls the foreground window's keyboard layout and updates the tray icon if changed.
-/// Also detects changes to the installed-layout list and rebuilds conversion tables.
+/// Returns the effective color for the given layout, consulting user overrides
+/// first (via `colors::get_color`) then falling back to the default palette.
+fn current_color_for(hkl: layouts::HklId) -> colors::Color {
+    let installed = layouts::get_installed_layouts();
+    let idx = installed
+        .iter()
+        .position(|l| l.hkl_id == hkl)
+        .unwrap_or(0);
+    colors::get_color(hkl, idx)
+}
+
+/// Polls the foreground window's keyboard layout and updates the tray icon if
+/// the layout OR its configured color has changed. Also detects installed-layout
+/// changes and rebuilds conversion tables.
 fn poll_and_update_layout(hwnd: HWND) {
     // Detect installed-layout changes (e.g. user added/removed a layout).
     let installed_ids = layouts::get_layout_order();
@@ -129,17 +148,21 @@ fn poll_and_update_layout(hwnd: HWND) {
     }
 
     let hkl_id = layouts::get_current_layout();
-    let mut current = CURRENT_LAYOUT.lock().unwrap();
-    if *current == hkl_id {
+    let color = current_color_for(hkl_id);
+
+    let mut current_layout = CURRENT_LAYOUT.lock().unwrap();
+    let mut current_color = CURRENT_ICON_COLOR.lock().unwrap();
+    if *current_layout == hkl_id && *current_color == color {
         return;
     }
-    *current = hkl_id;
-    drop(current);
+    *current_layout = hkl_id;
+    *current_color = color;
+    drop(current_layout);
+    drop(current_color);
 
     let label = icon::hkl_to_label(hkl_id);
-    let new_icon = icon::create_text_icon(&label);
+    let new_icon = icon::create_text_icon(&label, color);
 
-    // Replace tray icon
     let mut nid = NOTIFYICONDATAW {
         cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
         hWnd: hwnd,
@@ -157,7 +180,6 @@ fn poll_and_update_layout(hwnd: HWND) {
     }
     unsafe { let _ = Shell_NotifyIconW(NIM_MODIFY, &nid); };
 
-    // Destroy previous icon and store new one
     let mut current_icon = CURRENT_ICON.lock().unwrap();
     if *current_icon != 0 {
         icon::destroy_icon(HICON(*current_icon as *mut _));
@@ -166,11 +188,13 @@ fn poll_and_update_layout(hwnd: HWND) {
 }
 
 fn add_tray_icon(hwnd: HWND) {
-    // Create initial icon based on current layout
+    // Create initial icon based on current layout + its configured color.
     let hkl_id = layouts::get_current_layout();
+    let color = current_color_for(hkl_id);
     *CURRENT_LAYOUT.lock().unwrap() = hkl_id;
+    *CURRENT_ICON_COLOR.lock().unwrap() = color;
     let label = icon::hkl_to_label(hkl_id);
-    let hicon = icon::create_text_icon(&label);
+    let hicon = icon::create_text_icon(&label, color);
     *CURRENT_ICON.lock().unwrap() = hicon.0 as isize;
 
     let mut nid = NOTIFYICONDATAW {
@@ -251,6 +275,13 @@ unsafe fn wnd_proc_inner(
             if wparam.0 == TIMER_LAYOUT_POLL {
                 poll_and_update_layout(hwnd);
             }
+            LRESULT(0)
+        }
+        WM_APP_REFRESH_ICON => {
+            // Settings UI asked for an immediate tray-icon refresh (e.g. after
+            // color change). Delegate to the polling routine, which will detect
+            // the color change and rebuild.
+            poll_and_update_layout(hwnd);
             LRESULT(0)
         }
         hooks::WM_APP_HOTKEY => {

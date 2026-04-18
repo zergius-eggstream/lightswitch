@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/logo.png" alt="LightSwitch logo" width="128" height="128">
+</p>
+
 # LightSwitch
 
 A lightweight, fast, and reliable keyboard layout switcher for Windows with text conversion between layouts.

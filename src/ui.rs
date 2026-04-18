@@ -1,12 +1,18 @@
+use crate::colors::{self, Color};
 use crate::config::{self, Config};
 use crate::hooks;
 use crate::hotkeys::Modifiers;
 use crate::layouts::{self, HklId};
 use std::sync::Mutex;
 use windows::core::w;
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
-use windows::Win32::Graphics::Gdi::{GetStockObject, DEFAULT_GUI_FONT};
+use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Graphics::Gdi::{
+    CreateSolidBrush, DeleteObject, FillRect, FrameRect, GetStockObject, InvalidateRect,
+    DEFAULT_GUI_FONT,
+};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::UI::Controls::Dialogs::{ChooseColorW, CC_FULLOPEN, CC_RGBINIT, CHOOSECOLORW};
+use windows::Win32::UI::Controls::{DRAWITEMSTRUCT, ODS_FOCUS};
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
@@ -19,6 +25,7 @@ const ID_LAYOUT_HOTKEY_BASE: u16 = 3000;
 const ID_CLEAR_BASE: u16 = 4000;         // 4000, 4001, 4002... clear buttons for layouts
 const ID_CLEAR_CONVERSION: u16 = 4100;
 const ID_CLEAR_WORD: u16 = 4101;
+const ID_SWATCH_BASE: u16 = 5000;        // 5000, 5001, 5002... color swatches for layouts
 
 const BST_CHECKED_VAL: usize = 1;
 const BM_SETCHECK_MSG: u32 = 0x00F1;
@@ -117,8 +124,10 @@ fn create_settings_window() {
             } else {
                 hotkey_str
             };
-            create_button(hwnd, &display, 170, y, 170, 24, control_id, font.0);
-            create_button(hwnd, "X", 345, y, 26, 24, ID_CLEAR_BASE + i as u16, font.0);
+            // Layout: label | hotkey button (143w) | color swatch (24w) | X (26w)
+            create_button(hwnd, &display, 170, y, 143, 24, control_id, font.0);
+            create_owner_drawn_button(hwnd, 318, y, 24, 24, ID_SWATCH_BASE + i as u16);
+            create_button(hwnd, "X", 347, y, 26, 24, ID_CLEAR_BASE + i as u16, font.0);
             y += 30;
         }
 
@@ -199,6 +208,22 @@ fn create_button(parent: HWND, text: &str, x: i32, y: i32, w: i32, h: i32, id: u
     unsafe { SendMessageW(hwnd, WM_SETFONT, Some(WPARAM(font as usize)), Some(LPARAM(1))) };
 }
 
+/// Creates an owner-drawn button — the actual drawing happens in our
+/// `WM_DRAWITEM` handler. Used for color swatch squares.
+fn create_owner_drawn_button(parent: HWND, x: i32, y: i32, w: i32, h: i32, id: u16) {
+    let _ = unsafe {
+        CreateWindowExW(
+            Default::default(),
+            w!("BUTTON"),
+            w!(""),
+            WS_CHILD | WS_VISIBLE | WINDOW_STYLE(BS_OWNERDRAW as u32),
+            x, y, w, h,
+            Some(parent), Some(HMENU(id as *mut _)), None, None,
+        )
+        .unwrap()
+    };
+}
+
 fn create_checkbox(parent: HWND, text: &str, x: i32, y: i32, w: i32, h: i32, id: u16, checked: bool, font: *mut core::ffi::c_void) {
     let text_wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
     let hwnd = unsafe { CreateWindowExW(
@@ -251,8 +276,21 @@ unsafe extern "system" fn settings_proc(
                         let layout_control = ID_LAYOUT_HOTKEY_BASE + (id - ID_CLEAR_BASE);
                         clear_hotkey(hwnd, layout_control);
                     }
+                    _ if id >= ID_SWATCH_BASE && id < ID_SWATCH_BASE + 20 => {
+                        pick_color(hwnd, id);
+                    }
                     _ => {}
                 }
+            }
+            LRESULT(0)
+        }
+        WM_DRAWITEM => {
+            // Owner-draw request from a color swatch button.
+            let draw = unsafe { &*(lparam.0 as *const DRAWITEMSTRUCT) };
+            let id = draw.CtlID as u16;
+            if id >= ID_SWATCH_BASE && id < ID_SWATCH_BASE + 20 {
+                draw_swatch(draw, id);
+                return LRESULT(1);
             }
             LRESULT(0)
         }
@@ -504,6 +542,135 @@ fn find_conflict(state: &SettingsState, current_control: u16, key_name: &str) ->
     }
 
     None
+}
+
+/// Returns the effective color for the swatch at `index` in the layouts list,
+/// checking the settings state's per-layout overrides first, then the default
+/// palette.
+fn swatch_color(index: usize) -> Color {
+    let state = STATE.lock().unwrap();
+    let Some(s) = state.as_ref() else {
+        return 0x808080;
+    };
+    let Some(&hkl) = s.layout_hkls.get(index) else {
+        return 0x808080;
+    };
+    let key = config::format_layout_key(hkl);
+    if let Some(hex) = s.config.layout_colors.get(&key) {
+        if let Some(c) = colors::parse_hex(hex) {
+            return c;
+        }
+    }
+    colors::default_color(hkl, index)
+}
+
+/// Paints a color swatch button in response to `WM_DRAWITEM`.
+fn draw_swatch(draw: &DRAWITEMSTRUCT, swatch_id: u16) {
+    let index = (swatch_id - ID_SWATCH_BASE) as usize;
+    let color = swatch_color(index);
+
+    let mut rect: RECT = draw.rcItem;
+    unsafe {
+        let brush = CreateSolidBrush(color_to_colorref(color));
+        FillRect(draw.hDC, &rect, brush);
+        let _ = DeleteObject(brush.into());
+
+        // Black border
+        let border = CreateSolidBrush(COLORREF(0));
+        FrameRect(draw.hDC, &rect, border);
+        let _ = DeleteObject(border.into());
+
+        // Focus ring if pressed/focused
+        if (draw.itemState.0 & ODS_FOCUS.0) != 0 {
+            rect.left += 2;
+            rect.top += 2;
+            rect.right -= 2;
+            rect.bottom -= 2;
+            let fbrush = CreateSolidBrush(COLORREF(0xFFFFFF));
+            FrameRect(draw.hDC, &rect, fbrush);
+            let _ = DeleteObject(fbrush.into());
+        }
+    }
+}
+
+fn color_to_colorref(color: Color) -> COLORREF {
+    let r = (color >> 16) & 0xFF;
+    let g = (color >> 8) & 0xFF;
+    let b = color & 0xFF;
+    COLORREF((b << 16) | (g << 8) | r)
+}
+
+fn colorref_to_color(cr: COLORREF) -> Color {
+    // COLORREF is 0x00BBGGRR; we want 0x00RRGGBB.
+    let v = cr.0;
+    let r = v & 0xFF;
+    let g = (v >> 8) & 0xFF;
+    let b = (v >> 16) & 0xFF;
+    (r << 16) | (g << 8) | b
+}
+
+/// Opens the standard Windows color picker for the given swatch; on OK,
+/// saves the new color to the in-memory config, updates the shared
+/// override map for immediate preview, and redraws the swatch.
+fn pick_color(hwnd: HWND, swatch_id: u16) {
+    let index = (swatch_id - ID_SWATCH_BASE) as usize;
+    let initial = swatch_color(index);
+
+    // Custom color palette (16 slots) — pre-fill with our default palette so
+    // the user can quickly pick one of them.
+    let mut custom = [COLORREF(0); 16];
+    for (i, &c) in [0x005FB8u32, 0xC42B1C, 0x107C10, 0xCA5010, 0x8764B8].iter().enumerate() {
+        custom[i] = color_to_colorref(c);
+    }
+
+    let mut cc = CHOOSECOLORW {
+        lStructSize: std::mem::size_of::<CHOOSECOLORW>() as u32,
+        hwndOwner: hwnd,
+        rgbResult: color_to_colorref(initial),
+        lpCustColors: custom.as_mut_ptr(),
+        Flags: CC_RGBINIT | CC_FULLOPEN,
+        ..Default::default()
+    };
+
+    let ok = unsafe { ChooseColorW(&mut cc).as_bool() };
+    if !ok {
+        return;
+    }
+
+    let new_color = colorref_to_color(cc.rgbResult);
+
+    // Update state
+    {
+        let mut state = STATE.lock().unwrap();
+        let Some(s) = state.as_mut() else { return };
+        let Some(&hkl) = s.layout_hkls.get(index) else { return };
+        let key = config::format_layout_key(hkl);
+        s.config
+            .layout_colors
+            .insert(key, colors::format_hex(new_color));
+        colors::set_override(hkl, new_color);
+    }
+
+    // Redraw the swatch button immediately
+    if let Ok(swatch_hwnd) = unsafe { GetDlgItem(Some(hwnd), swatch_id as i32) } {
+        unsafe {
+            let _ = InvalidateRect(Some(swatch_hwnd), None, true);
+        }
+    }
+
+    // Ask the main window to refresh the tray icon in case this layout is
+    // currently active.
+    if let Some(main_hwnd_val) = hooks::get_main_hwnd() {
+        let main_hwnd = HWND(main_hwnd_val as *mut _);
+        unsafe {
+            let _ = PostMessageW(
+                Some(main_hwnd),
+                crate::WM_APP_REFRESH_ICON,
+                WPARAM(0),
+                LPARAM(0),
+            );
+        }
+    }
 }
 
 fn save_settings(hwnd: HWND) {
