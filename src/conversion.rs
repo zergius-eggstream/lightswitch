@@ -1,5 +1,5 @@
 use crate::layouts::{self, HklId};
-use crate::{clipboard, input, log, tables};
+use crate::{clipboard, input, log, tables, uia};
 
 /// Attempts cyclic conversion: detects source layout from text,
 /// falls back to current keyboard layout for ambiguous text.
@@ -39,26 +39,42 @@ pub fn convert_cyclic(
 /// of the current line. Workaround: always make a real selection. Proper
 /// fix planned via UI Automation (Stage 8).
 pub fn perform_conversion() {
-    let saved_clipboard = clipboard::get_text();
-    clipboard::set_text("");
-    std::thread::sleep(std::time::Duration::from_millis(30));
-
-    input::send_copy();
-    std::thread::sleep(std::time::Duration::from_millis(80));
-
-    let text = clipboard::get_text().unwrap_or_default();
-    if text.is_empty() {
-        restore_clipboard(saved_clipboard);
-        return;
+    // 1. Try UIA first — it reports the real selection without touching the
+    //    clipboard, which avoids the "smart copy" bug in Notepad Win11, VS
+    //    Code, and other modern editors.
+    let uia_text = uia::get_selected_text();
+    if let Some(text) = &uia_text {
+        log!("[uia] read selection: {} chars", text.len());
     }
+
+    let saved_clipboard = clipboard::get_text();
+
+    let text = match uia_text {
+        Some(t) => t,
+        None => {
+            // 2. Fallback: clipboard + Ctrl+C. This hits the smart-copy
+            //    issue in editors that copy the current line on empty
+            //    selection — documented limitation.
+            clipboard::set_text("");
+            std::thread::sleep(std::time::Duration::from_millis(30));
+            input::send_copy();
+            std::thread::sleep(std::time::Duration::from_millis(80));
+            let t = clipboard::get_text().unwrap_or_default();
+            if t.is_empty() {
+                restore_clipboard(saved_clipboard);
+                return;
+            }
+            t
+        }
+    };
 
     let Some(converted_len) = convert_and_paste(&text) else {
         restore_clipboard(saved_clipboard);
         return;
     };
 
-    // Selection-based conversion: re-select the pasted text so the user can
-    // press the hotkey again to cycle through layouts without re-selecting.
+    // Re-select the pasted text so the user can cycle through layouts
+    // with repeated hotkey presses.
     input::send_select_n_left(converted_len);
     std::thread::sleep(std::time::Duration::from_millis(30));
 
@@ -69,24 +85,38 @@ pub fn perform_conversion() {
 /// Performs single-word conversion: selects the word to the left of the cursor
 /// (Ctrl+Shift+Left), converts it, pastes back.
 pub fn perform_word_conversion() {
-    let saved_clipboard = clipboard::get_text();
-    clipboard::set_text("");
-    std::thread::sleep(std::time::Duration::from_millis(30));
-
-    input::send_select_word_left();
-    std::thread::sleep(std::time::Duration::from_millis(50));
-
-    input::send_copy();
-    std::thread::sleep(std::time::Duration::from_millis(80));
-
-    let text = clipboard::get_text().unwrap_or_default();
-    if text.is_empty() {
-        restore_clipboard(saved_clipboard);
-        return;
+    // UIA path: expand around the caret to a Word unit, Select() it.
+    // After this the selection is the word; the rest of the flow is the
+    // same as the selection-based conversion — we just don't re-select
+    // at the end, so the cursor lands after the pasted text.
+    let uia_text = uia::select_word_at_caret();
+    if let Some(text) = &uia_text {
+        log!("[uia] selected word: {} chars", text.len());
     }
 
-    // Word conversion doesn't re-select the pasted text — cursor stays at the
-    // end, matching the pre-conversion state (no selection was active before).
+    let saved_clipboard = clipboard::get_text();
+
+    let text = match uia_text {
+        Some(t) => t,
+        None => {
+            // Fallback: send Ctrl+Shift+Left, then copy.
+            clipboard::set_text("");
+            std::thread::sleep(std::time::Duration::from_millis(30));
+            input::send_select_word_left();
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            input::send_copy();
+            std::thread::sleep(std::time::Duration::from_millis(80));
+            let t = clipboard::get_text().unwrap_or_default();
+            if t.is_empty() {
+                restore_clipboard(saved_clipboard);
+                return;
+            }
+            t
+        }
+    };
+
+    // Word conversion doesn't re-select the pasted text — cursor stays at
+    // the end, matching the pre-conversion state.
     if convert_and_paste(&text).is_none() {
         restore_clipboard(saved_clipboard);
         return;

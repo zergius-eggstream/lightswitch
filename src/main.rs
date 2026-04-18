@@ -13,6 +13,7 @@ mod layouts;
 mod logger;
 mod tables;
 mod ui;
+mod uia;
 
 use config::Config;
 use std::sync::Mutex;
@@ -69,6 +70,14 @@ fn main() {
     }
     hotkeys::set_bindings(bindings);
     colors::set_overrides(config.to_color_overrides());
+
+    // Initialize UIA on the main thread (required for apartment threading).
+    // The setting is applied even if init fails — helpers short-circuit when
+    // `is_enabled()` is false or no automation object was created.
+    uia::set_enabled(config.general.use_uia);
+    if config.general.use_uia {
+        uia::init();
+    }
 
     match hooks::install_hook() {
         Ok(_) => log!("Keyboard hook installed"),
