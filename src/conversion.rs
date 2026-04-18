@@ -99,19 +99,52 @@ pub fn perform_word_conversion() {
     let text = match uia_text {
         Some(t) => t,
         None => {
-            // Fallback: send Ctrl+Shift+Left, then copy.
+            // Fallback for apps without UIA TextPattern (e.g. Notepad++).
+            // Select from cursor to line start, find the last whitespace
+            // from the right, then shrink the selection from the left so
+            // only the contiguous non-whitespace run ending at the cursor
+            // remains selected. This mirrors the UIA path's definition of
+            // "word" (maximum non-whitespace run) rather than the OS's
+            // Ctrl+Shift+Left, which breaks at punctuation.
             clipboard::set_text("");
             std::thread::sleep(std::time::Duration::from_millis(30));
-            input::send_select_word_left();
+
+            input::send_select_to_line_start();
             std::thread::sleep(std::time::Duration::from_millis(50));
             input::send_copy();
             std::thread::sleep(std::time::Duration::from_millis(80));
-            let t = clipboard::get_text().unwrap_or_default();
-            if t.is_empty() {
+
+            let selected = clipboard::get_text().unwrap_or_default();
+            if selected.is_empty() {
                 restore_clipboard(saved_clipboard);
                 return;
             }
-            t
+
+            let chars: Vec<char> = selected.chars().collect();
+            let mut word_start = chars.len();
+            while word_start > 0 && !chars[word_start - 1].is_whitespace() {
+                word_start -= 1;
+            }
+            if word_start == chars.len() {
+                // Caret sits on whitespace or at line start — nothing to do.
+                restore_clipboard(saved_clipboard);
+                return;
+            }
+
+            let word: String = chars[word_start..].iter().collect();
+            log!(
+                "[fallback] word: {} chars (shrinking {} from left)",
+                word.len(),
+                word_start
+            );
+
+            // Shrink selection from left so only the word remains selected.
+            // This matters for the subsequent Ctrl+V: it replaces the
+            // selected text, and we want it to replace exactly the word.
+            input::send_select_n_right(word_start);
+            std::thread::sleep(std::time::Duration::from_millis(30));
+
+            word
         }
     };
 
