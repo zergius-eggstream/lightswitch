@@ -11,9 +11,9 @@
 
 use crate::hooks;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_EXTENDEDKEY,
-    KEYEVENTF_KEYUP, VIRTUAL_KEY, VK_C, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_HOME, VK_INSERT,
-    VK_LEFT, VK_NEXT, VK_PRIOR, VK_RIGHT, VK_SHIFT, VK_UP, VK_V,
+    INPUT, INPUT_0, INPUT_KEYBOARD, KEYBD_EVENT_FLAGS, KEYBDINPUT, KEYEVENTF_EXTENDEDKEY,
+    KEYEVENTF_KEYUP, SendInput, VIRTUAL_KEY, VK_C, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_HOME,
+    VK_INSERT, VK_LEFT, VK_NEXT, VK_PRIOR, VK_RIGHT, VK_SHIFT, VK_UP, VK_V,
 };
 
 /// Returns true if the given virtual key is an "extended key" in Win32 terms.
@@ -22,9 +22,16 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 fn is_extended_vk(vk: VIRTUAL_KEY) -> bool {
     matches!(
         vk,
-        VK_LEFT | VK_RIGHT | VK_UP | VK_DOWN
-            | VK_HOME | VK_END | VK_PRIOR | VK_NEXT
-            | VK_INSERT | VK_DELETE
+        VK_LEFT
+            | VK_RIGHT
+            | VK_UP
+            | VK_DOWN
+            | VK_HOME
+            | VK_END
+            | VK_PRIOR
+            | VK_NEXT
+            | VK_INSERT
+            | VK_DELETE
     )
 }
 
@@ -98,12 +105,20 @@ pub fn send_select_word_left() {
     let shift_held = hooks::user_holds_shift();
 
     let mut inputs: Vec<INPUT> = Vec::with_capacity(6);
-    if !ctrl_held { inputs.push(key_down(VK_CONTROL)); }
-    if !shift_held { inputs.push(key_down(VK_SHIFT)); }
+    if !ctrl_held {
+        inputs.push(key_down(VK_CONTROL));
+    }
+    if !shift_held {
+        inputs.push(key_down(VK_SHIFT));
+    }
     inputs.push(key_down(VK_LEFT));
     inputs.push(key_up(VK_LEFT));
-    if !shift_held { inputs.push(key_up(VK_SHIFT)); }
-    if !ctrl_held { inputs.push(key_up(VK_CONTROL)); }
+    if !shift_held {
+        inputs.push(key_up(VK_SHIFT));
+    }
+    if !ctrl_held {
+        inputs.push(key_up(VK_CONTROL));
+    }
     dispatch(&inputs);
 }
 

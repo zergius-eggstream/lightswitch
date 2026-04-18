@@ -16,11 +16,11 @@
 //! automatic support for any installed layout, including multiple variants
 //! of the same language (e.g. Russian standard vs Russian Typewriter).
 
-use crate::layouts::{id_to_hkl, HklId};
+use crate::layouts::{HklId, id_to_hkl};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    MapVirtualKeyExW, ToUnicodeEx, MAPVK_VK_TO_VSC, VK_SHIFT, VK_SPACE,
+    MAPVK_VK_TO_VSC, MapVirtualKeyExW, ToUnicodeEx, VK_SHIFT, VK_SPACE,
 };
 
 /// Set of virtual key codes we probe to build each layout's character set.
@@ -97,10 +97,10 @@ pub fn rebuild(installed: &[HklId]) {
             let to_map = &layout_maps[&to];
             let mut table: HashMap<char, char> = HashMap::new();
             for (pos, &from_char) in from_map {
-                if let Some(&to_char) = to_map.get(pos) {
-                    if from_char != to_char {
-                        table.insert(from_char, to_char);
-                    }
+                if let Some(&to_char) = to_map.get(pos)
+                    && from_char != to_char
+                {
+                    table.insert(from_char, to_char);
                 }
             }
             conversions.insert((from, to), Arc::new(table));
@@ -124,7 +124,13 @@ pub fn rebuild(installed: &[HklId]) {
 
 /// Returns the cached conversion table for a given layout pair, if built.
 pub fn get_conversion(from: HklId, to: HklId) -> Option<Arc<HashMap<char, char>>> {
-    TABLES.lock().unwrap().as_ref()?.conversions.get(&(from, to)).cloned()
+    TABLES
+        .lock()
+        .unwrap()
+        .as_ref()?
+        .conversions
+        .get(&(from, to))
+        .cloned()
 }
 
 /// Detects the source layout of the given text using exclusive-char scoring.
@@ -178,20 +184,17 @@ fn probe_layout(hkl: HklId) -> LayoutMap {
                 key_state[VK_SHIFT.0 as usize] = 0x80;
             }
 
-            let scan = unsafe {
-                MapVirtualKeyExW(vk as u32, MAPVK_VK_TO_VSC, Some(hkl_handle))
-            };
+            let scan = unsafe { MapVirtualKeyExW(vk as u32, MAPVK_VK_TO_VSC, Some(hkl_handle)) };
 
             let mut buf = [0u16; 8];
-            let ret = unsafe {
-                ToUnicodeEx(vk as u32, scan, &key_state, &mut buf, 0, Some(hkl_handle))
-            };
+            let ret =
+                unsafe { ToUnicodeEx(vk as u32, scan, &key_state, &mut buf, 0, Some(hkl_handle)) };
 
             if ret == 1 {
-                if let Some(c) = char::from_u32(buf[0] as u32) {
-                    if !c.is_control() {
-                        map.insert((vk, shift), c);
-                    }
+                if let Some(c) = char::from_u32(buf[0] as u32)
+                    && !c.is_control()
+                {
+                    map.insert((vk, shift), c);
                 }
             } else if ret == -1 {
                 // Dead key. Consume it with a neutral call so it doesn't leak

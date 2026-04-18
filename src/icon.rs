@@ -1,15 +1,15 @@
 use crate::colors::{self, Color};
-use windows::core::w;
 use windows::Win32::Foundation::{COLORREF, RECT};
 use windows::Win32::Graphics::Gdi::{
-    CreateCompatibleBitmap, CreateCompatibleDC, CreateFontW, CreateSolidBrush, DeleteDC,
-    DeleteObject, DrawTextW, FillRect, GetDC, ReleaseDC, SelectObject, SetBkMode, SetTextColor,
-    CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET, DEFAULT_PITCH, DT_CENTER,
-    DT_SINGLELINE, DT_VCENTER, FF_DONTCARE, FW_BOLD, OUT_DEFAULT_PRECIS, TRANSPARENT,
+    CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS, CreateCompatibleBitmap, CreateCompatibleDC,
+    CreateFontW, CreateSolidBrush, DEFAULT_CHARSET, DEFAULT_PITCH, DT_CENTER, DT_SINGLELINE,
+    DT_VCENTER, DeleteDC, DeleteObject, DrawTextW, FF_DONTCARE, FW_BOLD, FillRect, GetDC,
+    OUT_DEFAULT_PRECIS, ReleaseDC, SelectObject, SetBkMode, SetTextColor, TRANSPARENT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateIconIndirect, DestroyIcon, GetSystemMetrics, HICON, ICONINFO, SM_CXSMICON, SM_CYSMICON,
 };
+use windows::core::w;
 
 /// Converts our `0x00RRGGBB` color to Win32 `COLORREF` (which is `0x00BBGGRR`).
 fn color_to_colorref(color: Color) -> COLORREF {
@@ -45,16 +45,26 @@ pub fn create_text_icon(text: &str, bg_color: Color) -> HICON {
         let old_bmp = SelectObject(mem_dc, color_bmp.into());
 
         let bg_brush = CreateSolidBrush(color_to_colorref(bg_color));
-        let mut rect = RECT { left: 0, top: 0, right: cx, bottom: cy };
+        let mut rect = RECT {
+            left: 0,
+            top: 0,
+            right: cx,
+            bottom: cy,
+        };
         FillRect(mem_dc, &rect, bg_brush);
         let _ = DeleteObject(bg_brush.into());
 
         // Font sized to fit 3 characters into the icon width.
         let font_height = (cy * 60) / 100;
         let font = CreateFontW(
-            font_height, 0, 0, 0,
+            font_height,
+            0,
+            0,
+            0,
             FW_BOLD.0 as i32,
-            0, 0, 0,
+            0,
+            0,
+            0,
             DEFAULT_CHARSET,
             OUT_DEFAULT_PRECIS,
             CLIP_DEFAULT_PRECIS,

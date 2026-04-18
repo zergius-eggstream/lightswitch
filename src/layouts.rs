@@ -114,7 +114,13 @@ pub fn get_layout_order() -> Vec<HklId> {
 /// Falls back to a hex code if the lookup fails.
 pub fn lang_id_to_name(lang_id: u16) -> String {
     let mut buffer = [0u16; 128];
-    let len = unsafe { GetLocaleInfoW(lang_id as u32, LOCALE_SNATIVELANGUAGENAME, Some(&mut buffer)) };
+    let len = unsafe {
+        GetLocaleInfoW(
+            lang_id as u32,
+            LOCALE_SNATIVELANGUAGENAME,
+            Some(&mut buffer),
+        )
+    };
     if len > 0 {
         let s = String::from_utf16_lossy(&buffer[..(len - 1) as usize]);
         let mut chars = s.chars();
@@ -130,13 +136,16 @@ pub fn lang_id_to_name(lang_id: u16) -> String {
 /// Returns a 3-letter abbreviation in the language's native script (e.g. "УКР").
 pub fn lang_id_to_abbrev(lang_id: u16) -> String {
     let mut buffer = [0u16; 128];
-    let len = unsafe { GetLocaleInfoW(lang_id as u32, LOCALE_SNATIVELANGUAGENAME, Some(&mut buffer)) };
+    let len = unsafe {
+        GetLocaleInfoW(
+            lang_id as u32,
+            LOCALE_SNATIVELANGUAGENAME,
+            Some(&mut buffer),
+        )
+    };
     if len > 0 {
         let s = String::from_utf16_lossy(&buffer[..(len - 1) as usize]);
-        s.chars()
-            .take(3)
-            .flat_map(|c| c.to_uppercase())
-            .collect()
+        s.chars().take(3).flat_map(|c| c.to_uppercase()).collect()
     } else {
         "??".to_string()
     }

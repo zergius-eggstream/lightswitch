@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
     #[serde(default)]
     pub general: GeneralConfig,
@@ -68,17 +68,6 @@ impl Default for ConversionConfig {
     }
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            general: GeneralConfig::default(),
-            layouts: HashMap::new(),
-            layout_colors: HashMap::new(),
-            conversion: ConversionConfig::default(),
-        }
-    }
-}
-
 impl Config {
     pub fn path() -> PathBuf {
         let appdata = std::env::var("APPDATA").unwrap_or_else(|_| ".".to_string());
@@ -133,22 +122,22 @@ impl Config {
             }
         }
 
-        if !self.conversion.hotkey.is_empty() {
-            if let Some(hotkey) = parse_hotkey(&self.conversion.hotkey) {
-                bindings.push(HotkeyBinding {
-                    hotkey,
-                    action: HotkeyAction::ConvertText,
-                });
-            }
+        if !self.conversion.hotkey.is_empty()
+            && let Some(hotkey) = parse_hotkey(&self.conversion.hotkey)
+        {
+            bindings.push(HotkeyBinding {
+                hotkey,
+                action: HotkeyAction::ConvertText,
+            });
         }
 
-        if !self.conversion.word_hotkey.is_empty() {
-            if let Some(hotkey) = parse_hotkey(&self.conversion.word_hotkey) {
-                bindings.push(HotkeyBinding {
-                    hotkey,
-                    action: HotkeyAction::ConvertWord,
-                });
-            }
+        if !self.conversion.word_hotkey.is_empty()
+            && let Some(hotkey) = parse_hotkey(&self.conversion.word_hotkey)
+        {
+            bindings.push(HotkeyBinding {
+                hotkey,
+                action: HotkeyAction::ConvertWord,
+            });
         }
 
         bindings
@@ -246,7 +235,12 @@ pub fn vk_to_key_name(vk: u16, modifiers: Modifiers) -> String {
         0x22 => "PageDown",
         0xC0 => "`",
         0x30..=0x39 => return format_parts(&parts, &(vk as u8 as char).to_string()),
-        0x41..=0x5A => return format_parts(&parts, &((vk - 0x41 + b'A' as u16) as u8 as char).to_string()),
+        0x41..=0x5A => {
+            return format_parts(
+                &parts,
+                &((vk - 0x41 + b'A' as u16) as u8 as char).to_string(),
+            );
+        }
         0x70..=0x87 => {
             return format_parts(&parts, &format!("F{}", vk - 0x70 + 1));
         }

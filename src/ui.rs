@@ -4,17 +4,17 @@ use crate::hooks;
 use crate::hotkeys::Modifiers;
 use crate::layouts::{self, HklId};
 use std::sync::Mutex;
-use windows::core::w;
 use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    CreateSolidBrush, DeleteObject, FillRect, FrameRect, GetStockObject, InvalidateRect,
-    DEFAULT_GUI_FONT,
+    CreateSolidBrush, DEFAULT_GUI_FONT, DeleteObject, FillRect, FrameRect, GetStockObject,
+    InvalidateRect,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::UI::Controls::Dialogs::{ChooseColorW, CC_FULLOPEN, CC_RGBINIT, CHOOSECOLORW};
+use windows::Win32::UI::Controls::Dialogs::{CC_FULLOPEN, CC_RGBINIT, CHOOSECOLORW, ChooseColorW};
 use windows::Win32::UI::Controls::{DRAWITEMSTRUCT, ODS_FOCUS};
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
+use windows::core::w;
 
 const ID_SAVE: u16 = 2001;
 const ID_CANCEL: u16 = 2002;
@@ -22,10 +22,10 @@ const ID_AUTOSTART: u16 = 2003;
 const ID_CONVERSION_HOTKEY: u16 = 2100;
 const ID_WORD_HOTKEY: u16 = 2101;
 const ID_LAYOUT_HOTKEY_BASE: u16 = 3000;
-const ID_CLEAR_BASE: u16 = 4000;         // 4000, 4001, 4002... clear buttons for layouts
+const ID_CLEAR_BASE: u16 = 4000; // 4000, 4001, 4002... clear buttons for layouts
 const ID_CLEAR_CONVERSION: u16 = 4100;
 const ID_CLEAR_WORD: u16 = 4101;
-const ID_SWATCH_BASE: u16 = 5000;        // 5000, 5001, 5002... color swatches for layouts
+const ID_SWATCH_BASE: u16 = 5000; // 5000, 5001, 5002... color swatches for layouts
 
 const BST_CHECKED_VAL: usize = 1;
 const BM_SETCHECK_MSG: u32 = 0x00F1;
@@ -141,7 +141,16 @@ fn create_settings_window() {
         } else {
             config.conversion.hotkey.clone()
         };
-        create_button(hwnd, &conv_display, 170, y, 170, 24, ID_CONVERSION_HOTKEY, font.0);
+        create_button(
+            hwnd,
+            &conv_display,
+            170,
+            y,
+            170,
+            24,
+            ID_CONVERSION_HOTKEY,
+            font.0,
+        );
         create_button(hwnd, "X", 345, y, 26, 24, ID_CLEAR_CONVERSION, font.0);
         y += 30;
 
@@ -155,7 +164,17 @@ fn create_settings_window() {
         create_button(hwnd, "X", 345, y, 26, 24, ID_CLEAR_WORD, font.0);
         y += 40;
 
-        create_checkbox(hwnd, "Start with Windows", 20, y, 200, 20, ID_AUTOSTART, config.general.autostart, font.0);
+        create_checkbox(
+            hwnd,
+            "Start with Windows",
+            20,
+            y,
+            200,
+            20,
+            ID_AUTOSTART,
+            config.general.autostart,
+            font.0,
+        );
         y += 35;
 
         create_button(hwnd, "Save", 200, y, 90, 28, ID_SAVE, font.0);
@@ -182,30 +201,80 @@ fn create_settings_window() {
     }
 }
 
-fn create_label(parent: HWND, text: &str, x: i32, y: i32, w: i32, h: i32, font: *mut core::ffi::c_void) {
+fn create_label(
+    parent: HWND,
+    text: &str,
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+    font: *mut core::ffi::c_void,
+) {
     let text_wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
-    let hwnd = unsafe { CreateWindowExW(
-        Default::default(),
-        w!("STATIC"),
-        windows::core::PCWSTR(text_wide.as_ptr()),
-        WS_CHILD | WS_VISIBLE,
-        x, y, w, h,
-        Some(parent), None, None, None,
-    ).unwrap() };
-    unsafe { SendMessageW(hwnd, WM_SETFONT, Some(WPARAM(font as usize)), Some(LPARAM(1))) };
+    let hwnd = unsafe {
+        CreateWindowExW(
+            Default::default(),
+            w!("STATIC"),
+            windows::core::PCWSTR(text_wide.as_ptr()),
+            WS_CHILD | WS_VISIBLE,
+            x,
+            y,
+            w,
+            h,
+            Some(parent),
+            None,
+            None,
+            None,
+        )
+        .unwrap()
+    };
+    unsafe {
+        SendMessageW(
+            hwnd,
+            WM_SETFONT,
+            Some(WPARAM(font as usize)),
+            Some(LPARAM(1)),
+        )
+    };
 }
 
-fn create_button(parent: HWND, text: &str, x: i32, y: i32, w: i32, h: i32, id: u16, font: *mut core::ffi::c_void) {
+#[allow(clippy::too_many_arguments)]
+fn create_button(
+    parent: HWND,
+    text: &str,
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+    id: u16,
+    font: *mut core::ffi::c_void,
+) {
     let text_wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
-    let hwnd = unsafe { CreateWindowExW(
-        Default::default(),
-        w!("BUTTON"),
-        windows::core::PCWSTR(text_wide.as_ptr()),
-        WS_CHILD | WS_VISIBLE | WINDOW_STYLE(BS_PUSHBUTTON as u32),
-        x, y, w, h,
-        Some(parent), Some(HMENU(id as *mut _)), None, None,
-    ).unwrap() };
-    unsafe { SendMessageW(hwnd, WM_SETFONT, Some(WPARAM(font as usize)), Some(LPARAM(1))) };
+    let hwnd = unsafe {
+        CreateWindowExW(
+            Default::default(),
+            w!("BUTTON"),
+            windows::core::PCWSTR(text_wide.as_ptr()),
+            WS_CHILD | WS_VISIBLE | WINDOW_STYLE(BS_PUSHBUTTON as u32),
+            x,
+            y,
+            w,
+            h,
+            Some(parent),
+            Some(HMENU(id as *mut _)),
+            None,
+            None,
+        )
+        .unwrap()
+    };
+    unsafe {
+        SendMessageW(
+            hwnd,
+            WM_SETFONT,
+            Some(WPARAM(font as usize)),
+            Some(LPARAM(1)),
+        )
+    };
 }
 
 /// Creates an owner-drawn button — the actual drawing happens in our
@@ -217,26 +286,66 @@ fn create_owner_drawn_button(parent: HWND, x: i32, y: i32, w: i32, h: i32, id: u
             w!("BUTTON"),
             w!(""),
             WS_CHILD | WS_VISIBLE | WINDOW_STYLE(BS_OWNERDRAW as u32),
-            x, y, w, h,
-            Some(parent), Some(HMENU(id as *mut _)), None, None,
+            x,
+            y,
+            w,
+            h,
+            Some(parent),
+            Some(HMENU(id as *mut _)),
+            None,
+            None,
         )
         .unwrap()
     };
 }
 
-fn create_checkbox(parent: HWND, text: &str, x: i32, y: i32, w: i32, h: i32, id: u16, checked: bool, font: *mut core::ffi::c_void) {
+#[allow(clippy::too_many_arguments)]
+fn create_checkbox(
+    parent: HWND,
+    text: &str,
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+    id: u16,
+    checked: bool,
+    font: *mut core::ffi::c_void,
+) {
     let text_wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
-    let hwnd = unsafe { CreateWindowExW(
-        Default::default(),
-        w!("BUTTON"),
-        windows::core::PCWSTR(text_wide.as_ptr()),
-        WS_CHILD | WS_VISIBLE | WINDOW_STYLE(BS_AUTOCHECKBOX as u32),
-        x, y, w, h,
-        Some(parent), Some(HMENU(id as *mut _)), None, None,
-    ).unwrap() };
-    unsafe { SendMessageW(hwnd, WM_SETFONT, Some(WPARAM(font as usize)), Some(LPARAM(1))) };
+    let hwnd = unsafe {
+        CreateWindowExW(
+            Default::default(),
+            w!("BUTTON"),
+            windows::core::PCWSTR(text_wide.as_ptr()),
+            WS_CHILD | WS_VISIBLE | WINDOW_STYLE(BS_AUTOCHECKBOX as u32),
+            x,
+            y,
+            w,
+            h,
+            Some(parent),
+            Some(HMENU(id as *mut _)),
+            None,
+            None,
+        )
+        .unwrap()
+    };
+    unsafe {
+        SendMessageW(
+            hwnd,
+            WM_SETFONT,
+            Some(WPARAM(font as usize)),
+            Some(LPARAM(1)),
+        )
+    };
     if checked {
-        unsafe { SendMessageW(hwnd, BM_SETCHECK_MSG, Some(WPARAM(BST_CHECKED_VAL)), Some(LPARAM(0))) };
+        unsafe {
+            SendMessageW(
+                hwnd,
+                BM_SETCHECK_MSG,
+                Some(WPARAM(BST_CHECKED_VAL)),
+                Some(LPARAM(0)),
+            )
+        };
     }
 }
 
@@ -262,7 +371,7 @@ unsafe extern "system" fn settings_proc(
                     }
                     _ if id == ID_CONVERSION_HOTKEY
                         || id == ID_WORD_HOTKEY
-                        || (id >= ID_LAYOUT_HOTKEY_BASE && id < ID_LAYOUT_HOTKEY_BASE + 20) =>
+                        || (ID_LAYOUT_HOTKEY_BASE..ID_LAYOUT_HOTKEY_BASE + 20).contains(&id) =>
                     {
                         start_hotkey_capture(hwnd, id);
                     }
@@ -272,11 +381,11 @@ unsafe extern "system" fn settings_proc(
                     _ if id == ID_CLEAR_WORD => {
                         clear_hotkey(hwnd, ID_WORD_HOTKEY);
                     }
-                    _ if id >= ID_CLEAR_BASE && id < ID_CLEAR_BASE + 20 => {
+                    _ if (ID_CLEAR_BASE..ID_CLEAR_BASE + 20).contains(&id) => {
                         let layout_control = ID_LAYOUT_HOTKEY_BASE + (id - ID_CLEAR_BASE);
                         clear_hotkey(hwnd, layout_control);
                     }
-                    _ if id >= ID_SWATCH_BASE && id < ID_SWATCH_BASE + 20 => {
+                    _ if (ID_SWATCH_BASE..ID_SWATCH_BASE + 20).contains(&id) => {
                         pick_color(hwnd, id);
                     }
                     _ => {}
@@ -288,7 +397,7 @@ unsafe extern "system" fn settings_proc(
             // Owner-draw request from a color swatch button.
             let draw = unsafe { &*(lparam.0 as *const DRAWITEMSTRUCT) };
             let id = draw.CtlID as u16;
-            if id >= ID_SWATCH_BASE && id < ID_SWATCH_BASE + 20 {
+            if (ID_SWATCH_BASE..ID_SWATCH_BASE + 20).contains(&id) {
                 draw_swatch(draw, id);
                 return LRESULT(1);
             }
@@ -316,8 +425,15 @@ unsafe extern "system" fn settings_proc(
 fn is_modifier_vk(vk: u16) -> bool {
     matches!(
         VIRTUAL_KEY(vk),
-        VK_SHIFT | VK_CONTROL | VK_MENU | VK_LSHIFT | VK_RSHIFT | VK_LCONTROL | VK_RCONTROL
-            | VK_LMENU | VK_RMENU
+        VK_SHIFT
+            | VK_CONTROL
+            | VK_MENU
+            | VK_LSHIFT
+            | VK_RSHIFT
+            | VK_LCONTROL
+            | VK_RCONTROL
+            | VK_LMENU
+            | VK_RMENU
     )
 }
 
@@ -354,14 +470,30 @@ fn handle_hotkey_capture(hwnd: HWND, wparam: WPARAM, lparam: LPARAM, is_keyup: b
             return;
         }
         let specific_vk = match VIRTUAL_KEY(vk) {
-            VK_CONTROL => if is_extended { VK_RCONTROL.0 } else { VK_LCONTROL.0 },
+            VK_CONTROL => {
+                if is_extended {
+                    VK_RCONTROL.0
+                } else {
+                    VK_LCONTROL.0
+                }
+            }
             VK_SHIFT => {
                 // Shift doesn't use extended flag — use scancode instead
                 let scancode = ((lparam.0 >> 16) & 0xFF) as u32;
                 let mapped = unsafe { MapVirtualKeyW(scancode, MAP_VIRTUAL_KEY_TYPE(3)) }; // MAPVK_VSC_TO_VK_EX
-                if mapped == VK_RSHIFT.0 as u32 { VK_RSHIFT.0 } else { VK_LSHIFT.0 }
+                if mapped == VK_RSHIFT.0 as u32 {
+                    VK_RSHIFT.0
+                } else {
+                    VK_LSHIFT.0
+                }
             }
-            VK_MENU => if is_extended { VK_RMENU.0 } else { VK_LMENU.0 },
+            VK_MENU => {
+                if is_extended {
+                    VK_RMENU.0
+                } else {
+                    VK_LMENU.0
+                }
+            }
             _ => vk,
         };
         finish_capture(hwnd, s, control_id, specific_vk, Modifiers::NONE);
@@ -381,12 +513,21 @@ fn handle_hotkey_capture(hwnd: HWND, wparam: WPARAM, lparam: LPARAM, is_keyup: b
     }
 }
 
-fn finish_capture(hwnd: HWND, state: &mut SettingsState, control_id: u16, vk: u16, modifiers: Modifiers) {
+fn finish_capture(
+    hwnd: HWND,
+    state: &mut SettingsState,
+    control_id: u16,
+    vk: u16,
+    modifiers: Modifiers,
+) {
     state.capturing_control = None;
     hooks::set_suspended(false);
 
     let key_name = config::vk_to_key_name(vk, modifiers);
-    eprintln!("[settings] Captured hotkey: {} for control {}", key_name, control_id);
+    eprintln!(
+        "[settings] Captured hotkey: {} for control {}",
+        key_name, control_id
+    );
 
     // Store the new binding
     if control_id == ID_CONVERSION_HOTKEY {
@@ -396,7 +537,10 @@ fn finish_capture(hwnd: HWND, state: &mut SettingsState, control_id: u16, vk: u1
     } else if control_id >= ID_LAYOUT_HOTKEY_BASE {
         let idx = (control_id - ID_LAYOUT_HOTKEY_BASE) as usize;
         if let Some(&hkl_id) = state.layout_hkls.get(idx) {
-            state.config.layouts.insert(config::format_layout_key(hkl_id), key_name);
+            state
+                .config
+                .layouts
+                .insert(config::format_layout_key(hkl_id), key_name);
         }
     }
 
@@ -431,7 +575,12 @@ fn refresh_all_buttons(hwnd: HWND, state: &SettingsState) {
 
     for (i, &hkl_id) in state.layout_hkls.iter().enumerate() {
         let layout_key = config::format_layout_key(hkl_id);
-        let hotkey_str = state.config.layouts.get(&layout_key).cloned().unwrap_or_default();
+        let hotkey_str = state
+            .config
+            .layouts
+            .get(&layout_key)
+            .cloned()
+            .unwrap_or_default();
         let name = layouts::get_installed_layouts()
             .iter()
             .find(|l| l.hkl_id == hkl_id)
@@ -440,8 +589,16 @@ fn refresh_all_buttons(hwnd: HWND, state: &SettingsState) {
         assignments.push((ID_LAYOUT_HOTKEY_BASE + i as u16, hotkey_str, name));
     }
 
-    assignments.push((ID_CONVERSION_HOTKEY, state.config.conversion.hotkey.clone(), "Text Conversion".to_string()));
-    assignments.push((ID_WORD_HOTKEY, state.config.conversion.word_hotkey.clone(), "Word Conversion".to_string()));
+    assignments.push((
+        ID_CONVERSION_HOTKEY,
+        state.config.conversion.hotkey.clone(),
+        "Text Conversion".to_string(),
+    ));
+    assignments.push((
+        ID_WORD_HOTKEY,
+        state.config.conversion.word_hotkey.clone(),
+        "Word Conversion".to_string(),
+    ));
 
     // For each assignment, check if it conflicts with any other
     for i in 0..assignments.len() {
@@ -457,10 +614,12 @@ fn refresh_all_buttons(hwnd: HWND, state: &SettingsState) {
 
         // Find conflict
         let mut conflict_with: Option<&str> = None;
-        for j in 0..assignments.len() {
-            if i == j { continue; }
-            if !assignments[j].1.is_empty() && assignments[j].1 == *key_name {
-                conflict_with = Some(&assignments[j].2);
+        for (j, other) in assignments.iter().enumerate() {
+            if i == j {
+                continue;
+            }
+            if !other.1.is_empty() && other.1 == *key_name {
+                conflict_with = Some(&other.2);
                 break;
             }
         }
@@ -501,13 +660,13 @@ fn has_conflicts(state: &SettingsState) -> bool {
 
     for &hkl_id in &state.layout_hkls {
         let key = config::format_layout_key(hkl_id);
-        if let Some(hotkey_str) = state.config.layouts.get(&key) {
-            if !hotkey_str.is_empty() {
-                if seen.contains(&hotkey_str.as_str()) {
-                    return true;
-                }
-                seen.push(hotkey_str);
+        if let Some(hotkey_str) = state.config.layouts.get(&key)
+            && !hotkey_str.is_empty()
+        {
+            if seen.contains(&hotkey_str.as_str()) {
+                return true;
             }
+            seen.push(hotkey_str);
         }
     }
 
@@ -526,10 +685,10 @@ fn swatch_color(index: usize) -> Color {
         return 0x808080;
     };
     let key = config::format_layout_key(hkl);
-    if let Some(hex) = s.config.layout_colors.get(&key) {
-        if let Some(c) = colors::parse_hex(hex) {
-            return c;
-        }
+    if let Some(hex) = s.config.layout_colors.get(&key)
+        && let Some(c) = colors::parse_hex(hex)
+    {
+        return c;
     }
     colors::default_color(hkl, index)
 }
@@ -589,7 +748,10 @@ fn pick_color(hwnd: HWND, swatch_id: u16) {
     // Custom color palette (16 slots) — pre-fill with our default palette so
     // the user can quickly pick one of them.
     let mut custom = [COLORREF(0); 16];
-    for (i, &c) in [0x005FB8u32, 0xC42B1C, 0x107C10, 0xCA5010, 0x8764B8].iter().enumerate() {
+    for (i, &c) in [0x005FB8u32, 0xC42B1C, 0x107C10, 0xCA5010, 0x8764B8]
+        .iter()
+        .enumerate()
+    {
         custom[i] = color_to_colorref(c);
     }
 
@@ -613,7 +775,9 @@ fn pick_color(hwnd: HWND, swatch_id: u16) {
     {
         let mut state = STATE.lock().unwrap();
         let Some(s) = state.as_mut() else { return };
-        let Some(&hkl) = s.layout_hkls.get(index) else { return };
+        let Some(&hkl) = s.layout_hkls.get(index) else {
+            return;
+        };
         let key = config::format_layout_key(hkl);
         s.config
             .layout_colors

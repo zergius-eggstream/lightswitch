@@ -2,7 +2,9 @@ use windows::Win32::Foundation::{HANDLE, HGLOBAL};
 use windows::Win32::System::DataExchange::{
     CloseClipboard, EmptyClipboard, GetClipboardData, OpenClipboard, SetClipboardData,
 };
-use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock, GMEM_MOVEABLE};
+use windows::Win32::System::Memory::{
+    GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock,
+};
 use windows::Win32::System::Ole::CF_UNICODETEXT;
 
 pub fn get_text() -> Option<String> {
@@ -59,7 +61,5 @@ unsafe fn write_clipboard_text(text: &str) -> bool {
     unsafe { std::ptr::copy_nonoverlapping(wide.as_ptr(), ptr, wide.len()) };
     let _ = unsafe { GlobalUnlock(hmem) };
 
-    unsafe {
-        SetClipboardData(CF_UNICODETEXT.0 as u32, Some(HANDLE(hmem.0))).is_ok()
-    }
+    unsafe { SetClipboardData(CF_UNICODETEXT.0 as u32, Some(HANDLE(hmem.0))).is_ok() }
 }

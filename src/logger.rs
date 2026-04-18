@@ -1,8 +1,8 @@
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::mpsc::{channel, Sender};
 use std::sync::OnceLock;
+use std::sync::mpsc::{Sender, channel};
 use std::time::Instant;
 
 /// Global channel to the background logger thread.

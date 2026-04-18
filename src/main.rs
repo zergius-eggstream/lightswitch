@@ -16,19 +16,19 @@ mod ui;
 
 use config::Config;
 use std::sync::Mutex;
-use windows::core::w;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Shell::{
-    Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY,
-    NOTIFYICONDATAW,
+    NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY, NOTIFYICONDATAW,
+    Shell_NotifyIconW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW, KillTimer,
-    PostQuitMessage, RegisterClassW, SetTimer, TranslateMessage, CS_HREDRAW, CS_VREDRAW,
-    CW_USEDEFAULT, HICON, MSG, WM_COMMAND, WM_DESTROY, WM_TIMER, WM_USER, WNDCLASSW,
+    CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, DestroyWindow,
+    DispatchMessageW, GetMessageW, HICON, KillTimer, MSG, PostQuitMessage, RegisterClassW,
+    SetTimer, TranslateMessage, WM_COMMAND, WM_DESTROY, WM_TIMER, WM_USER, WNDCLASSW,
     WS_OVERLAPPEDWINDOW,
 };
+use windows::core::w;
 
 const WM_TRAY_ICON: u32 = WM_USER + 1;
 const IDM_SETTINGS: u16 = 1001;
@@ -130,10 +130,7 @@ fn main() {
 /// first (via `colors::get_color`) then falling back to the default palette.
 fn current_color_for(hkl: layouts::HklId) -> colors::Color {
     let installed = layouts::get_installed_layouts();
-    let idx = installed
-        .iter()
-        .position(|l| l.hkl_id == hkl)
-        .unwrap_or(0);
+    let idx = installed.iter().position(|l| l.hkl_id == hkl).unwrap_or(0);
     colors::get_color(hkl, idx)
 }
 
@@ -179,7 +176,9 @@ fn poll_and_update_layout(hwnd: HWND) {
         }
         nid.szTip[i] = ch;
     }
-    unsafe { let _ = Shell_NotifyIconW(NIM_MODIFY, &nid); };
+    unsafe {
+        let _ = Shell_NotifyIconW(NIM_MODIFY, &nid);
+    };
 
     let mut current_icon = CURRENT_ICON.lock().unwrap();
     if *current_icon != 0 {
@@ -231,8 +230,8 @@ fn remove_tray_icon(hwnd: HWND) {
 
 fn show_tray_context_menu(hwnd: HWND) {
     use windows::Win32::UI::WindowsAndMessaging::{
-        AppendMenuW, CreatePopupMenu, GetCursorPos, SetForegroundWindow, TrackPopupMenu,
-        MF_SEPARATOR, MF_STRING, TPM_BOTTOMALIGN, TPM_LEFTALIGN,
+        AppendMenuW, CreatePopupMenu, GetCursorPos, MF_SEPARATOR, MF_STRING, SetForegroundWindow,
+        TPM_BOTTOMALIGN, TPM_LEFTALIGN, TrackPopupMenu,
     };
 
     unsafe {
@@ -246,14 +245,22 @@ fn show_tray_context_menu(hwnd: HWND) {
         GetCursorPos(&mut pt).unwrap();
 
         let _ = SetForegroundWindow(hwnd);
-        let _ = TrackPopupMenu(menu, TPM_LEFTALIGN | TPM_BOTTOMALIGN, pt.x, pt.y, Some(0), hwnd, None);
+        let _ = TrackPopupMenu(
+            menu,
+            TPM_LEFTALIGN | TPM_BOTTOMALIGN,
+            pt.x,
+            pt.y,
+            Some(0),
+            hwnd,
+            None,
+        );
     }
 }
 
 fn show_about_dialog(hwnd: HWND) {
     use windows::Win32::UI::Shell::ShellExecuteW;
     use windows::Win32::UI::WindowsAndMessaging::{
-        MessageBoxW, IDYES, MB_ICONINFORMATION, MB_YESNO, SW_SHOWNORMAL,
+        IDYES, MB_ICONINFORMATION, MB_YESNO, MessageBoxW, SW_SHOWNORMAL,
     };
 
     const REPO_URL: &str = "https://github.com/zergius-eggstream/lightswitch";
@@ -318,12 +325,7 @@ unsafe extern "system" fn wnd_proc(
     })
 }
 
-unsafe fn wnd_proc_inner(
-    hwnd: HWND,
-    msg: u32,
-    wparam: WPARAM,
-    lparam: LPARAM,
-) -> LRESULT {
+unsafe fn wnd_proc_inner(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     match msg {
         WM_TIMER => {
             if wparam.0 == TIMER_LAYOUT_POLL {

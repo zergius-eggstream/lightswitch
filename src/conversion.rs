@@ -4,7 +4,11 @@ use crate::{clipboard, input, log, tables};
 /// Attempts cyclic conversion: detects source layout from text,
 /// falls back to current keyboard layout for ambiguous text.
 /// Returns the converted text and the target HklId.
-pub fn convert_cyclic(text: &str, current_layout: HklId, layout_order: &[HklId]) -> (String, HklId) {
+pub fn convert_cyclic(
+    text: &str,
+    current_layout: HklId,
+    layout_order: &[HklId],
+) -> (String, HklId) {
     let source = tables::detect_source_layout(text).unwrap_or(current_layout);
 
     let current_idx = layout_order
@@ -104,7 +108,10 @@ fn convert_and_paste(text: &str) -> Option<usize> {
     let layout_order = layouts::get_layout_order();
 
     if layout_order.len() < 2 {
-        log!("[convert] need at least 2 installed layouts, found {}", layout_order.len());
+        log!(
+            "[convert] need at least 2 installed layouts, found {}",
+            layout_order.len()
+        );
         return None;
     }
 

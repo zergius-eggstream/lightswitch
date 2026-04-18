@@ -4,15 +4,14 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_RMENU, VK_RSHIFT, VK_SHIFT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallNextHookEx, PostMessageW, SetWindowsHookExW, UnhookWindowsHookEx, HHOOK,
-    KBDLLHOOKSTRUCT, LLKHF_INJECTED, WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN,
-    WM_SYSKEYUP,
+    CallNextHookEx, HHOOK, KBDLLHOOKSTRUCT, LLKHF_INJECTED, PostMessageW, SetWindowsHookExW,
+    UnhookWindowsHookEx, WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
 };
 
 use crate::hotkeys::{self, Modifiers};
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 static HOOK_HANDLE: Mutex<Option<isize>> = Mutex::new(None);
 static MAIN_HWND: Mutex<Option<isize>> = Mutex::new(None);
@@ -24,8 +23,12 @@ static HOOK_SUSPENDED: AtomicBool = AtomicBool::new(false);
 static USER_CTRL: AtomicBool = AtomicBool::new(false);
 static USER_SHIFT: AtomicBool = AtomicBool::new(false);
 
-pub fn user_holds_ctrl() -> bool { USER_CTRL.load(Ordering::Relaxed) }
-pub fn user_holds_shift() -> bool { USER_SHIFT.load(Ordering::Relaxed) }
+pub fn user_holds_ctrl() -> bool {
+    USER_CTRL.load(Ordering::Relaxed)
+}
+pub fn user_holds_shift() -> bool {
+    USER_SHIFT.load(Ordering::Relaxed)
+}
 
 /// Set of VK codes for which we have suppressed a keydown.
 /// We swallow auto-repeat keydowns and the matching keyup for these keys,
@@ -94,8 +97,15 @@ fn get_modifiers() -> Modifiers {
 fn is_modifier_key(vk: u16) -> bool {
     matches!(
         VIRTUAL_KEY(vk),
-        VK_SHIFT | VK_CONTROL | VK_MENU | VK_LSHIFT | VK_RSHIFT | VK_LCONTROL | VK_RCONTROL
-            | VK_LMENU | VK_RMENU
+        VK_SHIFT
+            | VK_CONTROL
+            | VK_MENU
+            | VK_LSHIFT
+            | VK_RSHIFT
+            | VK_LCONTROL
+            | VK_RCONTROL
+            | VK_LMENU
+            | VK_RMENU
     )
 }
 
@@ -191,10 +201,10 @@ unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARA
                     // If we already suppressed this key (auto-repeat), just swallow it.
                     {
                         let suppressed = suppressed_keys();
-                        if let Some(set) = suppressed.as_ref() {
-                            if set.contains(&normalized_vk) {
-                                return LRESULT(1);
-                            }
+                        if let Some(set) = suppressed.as_ref()
+                            && set.contains(&normalized_vk)
+                        {
+                            return LRESULT(1);
                         }
                     }
 
@@ -220,10 +230,10 @@ unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARA
                 // and clear it from the suppressed set.
                 {
                     let mut suppressed = suppressed_keys();
-                    if let Some(set) = suppressed.as_mut() {
-                        if set.remove(&normalized_vk) {
-                            return LRESULT(1);
-                        }
+                    if let Some(set) = suppressed.as_mut()
+                        && set.remove(&normalized_vk)
+                    {
+                        return LRESULT(1);
                     }
                 }
 

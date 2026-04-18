@@ -40,12 +40,11 @@ fn hash_color(hkl: HklId) -> Color {
 /// index, then hash-based fallback. `installed_index` is the layout's position
 /// in the system's installed-layouts list.
 pub fn get_color(hkl: HklId, installed_index: usize) -> Color {
-    if let Ok(guard) = OVERRIDES.lock() {
-        if let Some(ov) = guard.as_ref() {
-            if let Some(&c) = ov.get(&hkl) {
-                return c;
-            }
-        }
+    if let Ok(guard) = OVERRIDES.lock()
+        && let Some(ov) = guard.as_ref()
+        && let Some(&c) = ov.get(&hkl)
+    {
+        return c;
     }
     default_color(hkl, installed_index)
 }
