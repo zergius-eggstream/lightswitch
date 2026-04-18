@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-04-18
+
+Stage 8 — **UI Automation integration**. The long-standing "smart-copy"
+limitation from 0.2.0 is gone for apps that expose a UIA `TextPattern`
+(Notepad on Windows 11, WordPad, Word, Chrome/Edge web inputs, many
+Electron apps). The "convert selection" hotkey now sees the *actual*
+selection state via UIA, so an unselected current line can no longer
+be misinterpreted as a selection. Word conversion also got smarter:
+"word" is now a whitespace-bounded run everywhere, which means
+`прибор ↔ ghb,jh` and similar punctuation-crossing cycles finally
+round-trip correctly.
+
+### Added
+- **New `[general] use_uia` toggle in settings**, labelled
+  "Use UI Automation for reading selections". Default on. Caption:
+  "(uncheck if switching behaves oddly in some program)". Disabling
+  it reverts to the 0.2.0 clipboard-based flow globally.
+- **"About..." menu entry** (added in 0.2.0 branch, finalised in 0.3.0)
+  — shows version, build timestamp, copyright, and offers to open the
+  repository on GitHub via `ShellExecuteW`.
+- **UI Automation path** (`src/uia.rs`) — thread-local COM init, safe
+  wrappers for `IUIAutomation`, `IUIAutomationElement`,
+  `IUIAutomationTextPattern`, `IUIAutomationTextRange`.
+- **Clickable repo URL** in About via `MB_YESNO` + `ShellExecuteW`.
+- **GitHub Actions CI** (`cargo fmt --check`, `cargo clippy -D warnings`,
+  `cargo build --release` on a Windows runner) and a **release
+  workflow** that builds and publishes the EXE on any `v*` tag.
+- **LICENSE** (MIT) and **CONTRIBUTING.md** for the public-release
+  preparation.
+
+### Changed
+- **Word detection is now whitespace-delimited, not punctuation-delimited.**
+  UIA's `TextUnit_Word` splits at commas/periods; in Notepad+Win11 and
+  Word it also includes the trailing space. Both cause cyclic
+  word-conversion to misbehave. We replace that with: expand to
+  `TextUnit_Line`, locate the caret column via prefix-range text, walk
+  outward in Rust until whitespace, then shrink the line range to
+  exactly that span. The clipboard fallback (Notepad++ and other apps
+  without UIA) does the same trick with `Shift+Home` + `Shift+Right ×
+  N`. Result: `прибор → ghb,jh → прибор` cycles correctly everywhere.
+- **`perform_conversion`** tries UIA's `GetSelection` first, falls back
+  to clipboard+`Ctrl+C` when UIA isn't available or returns nothing.
+- **`perform_word_conversion`** tries UIA's line-based whitespace
+  expansion first, falls back to `Shift+Home`-based selection in the
+  clipboard path.
+
+### Infrastructure
+- Repository published to GitHub: https://github.com/zergius-eggstream/lightswitch
+- Branch ruleset on `main`: block deletion, block force-push. Admin bypass.
+- Existing 0.1.0 and 0.2.0 releases attached to their tags with binaries.
+
 ## [0.2.0] — 2026-04-18
 
 A significant rewrite of the core conversion engine plus two new user-visible
