@@ -21,7 +21,7 @@ Existing alternatives are either bloated keyloggers, abandoned, or feature-incom
 
 - Switch keyboard layouts via standalone modifier keys (tap LCtrl/RCtrl/LAlt/etc.) or key combinations (Ctrl+1, Shift+F1, etc.)
 - Convert selected text (or entire text field) between layouts with a hotkey
-- Cyclic conversion across all installed layouts (EN → RU → UA → EN)
+- Cyclic conversion across all installed layouts (EN → UA → PL → EN)
 - Automatic detection of the source layout based on the text
 - System layout switches to match converted text — keep typing without manual switching
 - Tray icon with settings window
@@ -32,7 +32,7 @@ Existing alternatives are either bloated keyloggers, abandoned, or feature-incom
 
 **Pre-release / MVP in development.** Core functionality works but the project is not yet ready for general use.
 
-Supports any keyboard layout installed in Windows — conversion tables are built dynamically at startup via `ToUnicodeEx`, so English, Russian, Ukrainian, Polish, German, Arabic, etc. all work out of the box. Multiple variants of the same language (e.g. Russian standard vs. Russian Typewriter) are distinguished by their full HKL.
+Supports any keyboard layout installed in Windows — conversion tables are built dynamically at startup via `ToUnicodeEx`, so English, Ukrainian, Polish, German, Arabic, etc. all work out of the box. Multiple variants of the same language (e.g. English QWERTY vs. English Dvorak) are distinguished by their full HKL.
 
 See [docs/technical-specification.md](docs/technical-specification.md) for the full spec and roadmap.
 
