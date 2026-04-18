@@ -9,7 +9,7 @@ Each item: title, status, problem statement, possible solutions, trade-offs.
 
 ## Smart cycling without leaving selection
 
-**Status:** idea / not scheduled
+**Status:** idea / deferred until Stage 8
 
 **Problem:**
 Currently, after `perform_conversion` pastes the converted text, it re-selects
@@ -33,77 +33,9 @@ On the next hotkey press:
   should still be at the end of the last paste), then convert.
 - Otherwise → standard flow (`Ctrl+C` → convert).
 
-**Pros:**
-- Cycling still works
-- Typing after conversion behaves naturally — no replacement, no undo quirk
-- Foreground HWND check guards against window-switch confusion
-
-**Cons:**
-- Adds state and timing logic
-- Edge case: user clicks somewhere else in the same window within 3 seconds,
-  then presses the hotkey — `Shift+Left` selects the wrong text
-- Doesn't work if user cycles slowly (>3s between presses)
-
-**Extra mitigation:** before re-selecting, send `Ctrl+C` first. If clipboard
-returns text → user has a real new selection, treat it as a fresh conversion.
-If clipboard is empty → no selection, safe to assume cycling and re-select.
-This nearly eliminates the edge case but adds an extra round-trip.
-
 **Decision deferred until** UI Automation integration (Stage 8), which will
 let us check selection state directly via `TextPattern.GetSelection()` —
 making this whole timestamp dance unnecessary.
-
----
-
-## Different background colors for first 5 layouts in tray icon
-
-**Status:** idea / not scheduled
-
-Originally noted in technical-specification.md Stage 7. For quick visual
-identification of the active layout, give each of the first 5 installed
-layouts a distinct background color (e.g. blue / red / yellow / green /
-purple). Layout 6+ falls back to a default color.
-
----
-
-## Investigate native Windows tray icon font for 3-letter abbreviations
-
-**Status:** idea / not scheduled
-
-The native Windows language switcher renders 3-letter abbreviations (УКР,
-РУС, ENG) clearly even at 16×16. Our icon looks slightly cramped. Possible
-causes: bitmap font, ClearType nuances, system DPI scaling, or a special
-font choice. Investigate whether any Win API exposes the same font / sizing
-the language bar uses.
-
-**Key insight from user:** The native Windows language indicator is NOT a
-tray icon — it's a **taskbar widget** with ~24px width, no background, and
-no edge padding. That's why it looks clean with 3 letters. Our tray icon
-is 16×16 with a background box, so we can't directly match it. Options:
-- Accept 16px and optimize font rendering (smaller margins, tighter kerning)
-- Use 2-letter codes on the 16px icon (EN, RU, UA) for readability
-- Explore whether Windows allows custom taskbar widgets (probably not without shell extension)
-
----
-
-## "About" menu item in tray icon
-
-**Status:** idea / not scheduled
-
-Add an **About** entry to the tray context menu (between Settings and Exit)
-that opens a small dialog with:
-- One-line description of the program ("Lightweight keyboard layout switcher with text conversion")
-- Version (e.g. `0.1.0`)
-- Release date
-- Link to the repository (when hosted on GitHub)
-- Link to the releases page (when available)
-- Copyright / license line
-
-Implementation notes:
-- Version should come from `env!("CARGO_PKG_VERSION")` so it stays in sync with `Cargo.toml`
-- Release date should be baked in at build time via a `build.rs` script or a build-time env var
-- Simple Win32 `MessageBoxW` dialog might be enough for a first iteration; a custom window with clickable links later
-- Links should open in the default browser via `ShellExecuteW` with the "open" verb
 
 ---
 
@@ -112,7 +44,8 @@ Implementation notes:
 **Status:** idea / not scheduled
 
 Two distribution formats:
-1. **Standalone .exe** — for power users. Just download and run. Current format.
+1. **Standalone .exe** — for power users. Just download and run. Current
+   format; published on GitHub Releases.
 2. **Installer** — for regular users. Asks:
    - Install for all users (→ Program Files, needs UAC elevation) or
      current user only (→ user profile, no elevation)
@@ -120,30 +53,56 @@ Two distribution formats:
    - Creates Start Menu shortcut and uninstaller
 
 Installer tech options: WiX, NSIS, Inno Setup, or a custom Rust-based
-installer. Consider `cargo-wix` for WiX integration in the Rust build.
+installer. `cargo-wix` is well-supported for WiX integration in the Rust
+build and would likely be the cleanest path.
 
 ---
 
-## Application icon (not tray)
+## Clickable links in the About dialog
 
 **Status:** idea / not scheduled
 
-LightSwitch needs a proper application icon for:
-- Task Manager process list
-- Alt+Tab switcher
-- Start Menu
-- File Explorer (the .exe itself)
-- Installer artwork
+The About dialog currently uses `MessageBoxW` with `MB_YESNO` — "Yes" opens
+the repository in the browser. This works but is a bit clunky. A proper
+dialog using `TaskDialogIndirect` with `TDF_ENABLE_HYPERLINKS` would let
+repository / releases / license URLs be clickable inline. Requires COM
+callback plumbing; deferred unless users complain.
 
-**Theme: light / switching.** Candidates:
-- A **lightbulb** (on/off = switching) — simple, recognizable silhouette
-- A **toggle switch** (up/down) — directly represents switching
-- A **light switch plate** (the wall switch) — matches the app name literally
-- A **lamp** — warm, friendly metaphor
+---
 
-The icon should be clean at 16×16, 32×32, 48×48, and 256×256. Should work
-on both light and dark Windows themes. Consider generating multiple sizes
-from an SVG source.
+## Investigate native Windows tray icon font
 
-For the tray icon, the dynamic text abbreviation (УКР/ENG) stays — the app
-icon is only for non-tray contexts.
+**Status:** idea / not scheduled
+
+The native Windows language indicator on the taskbar renders 3-letter
+abbreviations (УКР, РУС, ENG) very clearly. Ours looks slightly cramped.
+Key insight: **the native indicator is not a tray icon** — it's a taskbar
+widget with ~24px width, no background, no edge padding. We can't directly
+match it with a 16×16 tray icon. Options:
+- Accept 16px and optimize font rendering (smaller margins, tighter kerning).
+- Use 2-letter codes on the 16px icon (EN, RU, UA) for readability.
+- Explore whether Windows allows custom taskbar widgets (probably requires
+  a shell extension, significant extra complexity).
+
+---
+
+## Application icon refinement
+
+**Status:** done in 0.2.0, could be polished further
+
+A first-pass embedded icon exists (`assets/icon.ico`, generated by
+`cargo run --example gen_icon`, embedded via `winresource`). It's a
+stylized diagonal lightbulb. Readable at 16×16 but the artistic quality
+is basic — flat fills, minimal shading, no highlights beyond a single
+spot on the glass. If someone with actual design skills wants to replace
+it with a proper SVG-sourced multi-resolution icon, that would be welcome.
+
+---
+
+## Already done in earlier versions
+
+- **"About" tray menu entry** — implemented in 0.2.0. Shows version,
+  build timestamp, copyright, and offers to open the GitHub page.
+- **Different background colors per layout in tray icon** — implemented
+  in 0.2.0 as part of Stage 7, but with per-layout user customization
+  (color picker in settings) rather than a fixed palette of 5.
