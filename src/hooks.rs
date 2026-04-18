@@ -23,11 +23,9 @@ static HOOK_SUSPENDED: AtomicBool = AtomicBool::new(false);
 /// reflect the user's actual state (not whatever SendInput injected).
 static USER_CTRL: AtomicBool = AtomicBool::new(false);
 static USER_SHIFT: AtomicBool = AtomicBool::new(false);
-static USER_ALT: AtomicBool = AtomicBool::new(false);
 
 pub fn user_holds_ctrl() -> bool { USER_CTRL.load(Ordering::Relaxed) }
 pub fn user_holds_shift() -> bool { USER_SHIFT.load(Ordering::Relaxed) }
-pub fn user_holds_alt() -> bool { USER_ALT.load(Ordering::Relaxed) }
 
 /// Set of VK codes for which we have suppressed a keydown.
 /// We swallow auto-repeat keydowns and the matching keyup for these keys,
@@ -161,9 +159,6 @@ unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARA
             }
             VK_SHIFT | VK_LSHIFT | VK_RSHIFT => {
                 USER_SHIFT.store(msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN, Ordering::Relaxed);
-            }
-            VK_MENU | VK_LMENU | VK_RMENU => {
-                USER_ALT.store(msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN, Ordering::Relaxed);
             }
             _ => {}
         }

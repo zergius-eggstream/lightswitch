@@ -11,7 +11,6 @@ pub struct Modifiers {
 
 impl Modifiers {
     pub const NONE: Self = Self { ctrl: false, shift: false, alt: false };
-    pub const CTRL: Self = Self { ctrl: true, shift: false, alt: false };
 }
 
 /// A hotkey binding: a virtual key code + modifier state.

@@ -12,8 +12,8 @@
 use crate::hooks;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_EXTENDEDKEY,
-    KEYEVENTF_KEYUP, VIRTUAL_KEY, VK_A, VK_C, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_HOME,
-    VK_INSERT, VK_LEFT, VK_MENU, VK_NEXT, VK_PRIOR, VK_RIGHT, VK_SHIFT, VK_UP, VK_V,
+    KEYEVENTF_KEYUP, VIRTUAL_KEY, VK_C, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_HOME, VK_INSERT,
+    VK_LEFT, VK_NEXT, VK_PRIOR, VK_RIGHT, VK_SHIFT, VK_UP, VK_V,
 };
 
 /// Returns true if the given virtual key is an "extended key" in Win32 terms.
@@ -65,11 +65,6 @@ fn dispatch(inputs: &[INPUT]) {
     }
 }
 
-/// Sends a single key press+release.
-pub fn send_key(key: VIRTUAL_KEY) {
-    dispatch(&[key_down(key), key_up(key)]);
-}
-
 /// Sends Ctrl+`key`. If the user is already holding Ctrl, we don't press/release
 /// it ourselves — just send the key — so the user's Ctrl hold is preserved.
 fn send_ctrl_key(key: VIRTUAL_KEY) {
@@ -94,11 +89,6 @@ pub fn send_copy() {
 /// Simulates Ctrl+V.
 pub fn send_paste() {
     send_ctrl_key(VK_V);
-}
-
-/// Simulates Ctrl+A (select all).
-pub fn send_select_all() {
-    send_ctrl_key(VK_A);
 }
 
 /// Simulates Ctrl+Shift+Left — selects the word to the left of the cursor.

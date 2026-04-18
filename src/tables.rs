@@ -43,8 +43,6 @@ type KeyPos = (u16, bool);
 type LayoutMap = HashMap<KeyPos, char>;
 
 struct TableSet {
-    /// HKL → set of characters that layout can produce.
-    char_sets: HashMap<HklId, HashSet<char>>,
     /// HKL → chars that ONLY this layout produces among installed layouts.
     exclusive_chars: HashMap<HklId, HashSet<char>>,
     /// (from_hkl, to_hkl) → char-to-char conversion.
@@ -130,7 +128,6 @@ pub fn rebuild(installed: &[HklId]) {
     ));
 
     *TABLES.lock().unwrap() = Some(Arc::new(TableSet {
-        char_sets,
         exclusive_chars,
         conversions,
         built_for: installed.to_vec(),
@@ -140,17 +137,6 @@ pub fn rebuild(installed: &[HklId]) {
 /// Returns the cached conversion table for a given layout pair, if built.
 pub fn get_conversion(from: HklId, to: HklId) -> Option<Arc<HashMap<char, char>>> {
     TABLES.lock().unwrap().as_ref()?.conversions.get(&(from, to)).cloned()
-}
-
-/// Returns true if the given HKL pair has a (non-empty) conversion table.
-pub fn has_conversion(from: HklId, to: HklId) -> bool {
-    TABLES
-        .lock()
-        .unwrap()
-        .as_ref()
-        .and_then(|t| t.conversions.get(&(from, to)))
-        .map(|m| !m.is_empty())
-        .unwrap_or(false)
 }
 
 /// Detects the source layout of the given text using exclusive-char scoring.

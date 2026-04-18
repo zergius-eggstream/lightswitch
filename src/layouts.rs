@@ -33,10 +33,9 @@ pub fn hkl_lang_id(id: HklId) -> u16 {
 /// Represents an installed keyboard layout.
 #[derive(Debug, Clone)]
 pub struct LayoutInfo {
-    /// Full HKL-derived stable identifier.
+    /// Full HKL-derived stable identifier. The language ID is the low 16 bits,
+    /// extractable via `hkl_lang_id`.
     pub hkl_id: HklId,
-    /// Language ID (low 16 bits of HKL).
-    pub lang_id: u16,
     /// Human-readable name in the layout's native language (e.g. "Українська").
     pub name: String,
 }
@@ -55,9 +54,8 @@ pub fn get_installed_layouts() -> Vec<LayoutInfo> {
     hkls.into_iter()
         .map(|hkl| {
             let hkl_id = hkl_to_id(hkl);
-            let lang_id = hkl_lang_id(hkl_id);
-            let name = lang_id_to_name(lang_id);
-            LayoutInfo { hkl_id, lang_id, name }
+            let name = lang_id_to_name(hkl_lang_id(hkl_id));
+            LayoutInfo { hkl_id, name }
         })
         .collect()
 }

@@ -44,7 +44,7 @@ pub fn show_settings() {
     if let Some(hwnd_val) = *SETTINGS_HWND.lock().unwrap() {
         let hwnd = HWND(hwnd_val as *mut _);
         unsafe {
-            SetForegroundWindow(hwnd);
+            let _ = SetForegroundWindow(hwnd);
         }
         return;
     }
@@ -332,7 +332,7 @@ fn start_hotkey_capture(hwnd: HWND, control_id: u16) {
     unsafe { SetWindowTextW(button, text).unwrap() };
 
     // Move focus to the parent window so WM_KEYDOWN reaches settings_proc
-    unsafe { SetFocus(Some(hwnd)) };
+    let _ = unsafe { SetFocus(Some(hwnd)) };
 
     // Suspend the global hook so it doesn't intercept the key we're capturing
     hooks::set_suspended(true);
@@ -480,7 +480,7 @@ fn refresh_all_buttons(hwnd: HWND, state: &SettingsState) {
     // Enable/disable Save button based on conflicts
     if let Ok(save_btn) = unsafe { GetDlgItem(Some(hwnd), ID_SAVE as i32) } {
         let enable = !has_conflicts(state);
-        unsafe { EnableWindow(save_btn, enable) };
+        let _ = unsafe { EnableWindow(save_btn, enable) };
     }
 }
 
@@ -512,36 +512,6 @@ fn has_conflicts(state: &SettingsState) -> bool {
     }
 
     false
-}
-
-/// Checks if the given hotkey is already assigned to another control.
-/// Returns the name of the conflicting binding, or None.
-fn find_conflict(state: &SettingsState, current_control: u16, key_name: &str) -> Option<String> {
-    // Check conversion hotkey
-    if current_control != ID_CONVERSION_HOTKEY && state.config.conversion.hotkey == key_name {
-        return Some("Text Conversion".to_string());
-    }
-
-    // Check layout hotkeys
-    for (i, &hkl_id) in state.layout_hkls.iter().enumerate() {
-        let layout_control = ID_LAYOUT_HOTKEY_BASE + i as u16;
-        if layout_control == current_control {
-            continue;
-        }
-        let layout_key = config::format_layout_key(hkl_id);
-        if let Some(existing) = state.config.layouts.get(&layout_key) {
-            if existing == key_name {
-                let name = layouts::get_installed_layouts()
-                    .iter()
-                    .find(|l| l.hkl_id == hkl_id)
-                    .map(|l| l.name.clone())
-                    .unwrap_or_else(|| format!("0x{:08X}", hkl_id));
-                return Some(name);
-            }
-        }
-    }
-
-    None
 }
 
 /// Returns the effective color for the swatch at `index` in the layouts list,

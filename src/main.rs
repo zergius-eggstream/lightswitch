@@ -215,7 +215,7 @@ fn add_tray_icon(hwnd: HWND) {
         nid.szTip[i] = ch;
     }
 
-    unsafe { Shell_NotifyIconW(NIM_ADD, &nid) };
+    let _ = unsafe { Shell_NotifyIconW(NIM_ADD, &nid) };
 }
 
 fn remove_tray_icon(hwnd: HWND) {
@@ -225,7 +225,7 @@ fn remove_tray_icon(hwnd: HWND) {
         uID: 1,
         ..Default::default()
     };
-    unsafe { Shell_NotifyIconW(NIM_DELETE, &nid) };
+    let _ = unsafe { Shell_NotifyIconW(NIM_DELETE, &nid) };
 }
 
 fn show_tray_context_menu(hwnd: HWND) {
@@ -242,8 +242,8 @@ fn show_tray_context_menu(hwnd: HWND) {
         let mut pt = Default::default();
         GetCursorPos(&mut pt).unwrap();
 
-        SetForegroundWindow(hwnd);
-        TrackPopupMenu(menu, TPM_LEFTALIGN | TPM_BOTTOMALIGN, pt.x, pt.y, Some(0), hwnd, None);
+        let _ = SetForegroundWindow(hwnd);
+        let _ = TrackPopupMenu(menu, TPM_LEFTALIGN | TPM_BOTTOMALIGN, pt.x, pt.y, Some(0), hwnd, None);
     }
 }
 
@@ -255,7 +255,7 @@ unsafe extern "system" fn wnd_proc(
 ) -> LRESULT {
     // Catch any panic inside the message handler so it doesn't abort the process.
     // wnd_proc is called from Windows code which cannot unwind through Rust panics.
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
         wnd_proc_inner(hwnd, msg, wparam, lparam)
     }))
     .unwrap_or_else(|_| {

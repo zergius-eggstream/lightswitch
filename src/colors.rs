@@ -99,13 +99,6 @@ pub fn set_override(hkl: HklId, color: Color) {
     map.insert(hkl, color);
 }
 
-/// Removes a single override (falls back to default palette).
-pub fn clear_override(hkl: HklId) {
-    if let Some(map) = OVERRIDES.lock().unwrap().as_mut() {
-        map.remove(&hkl);
-    }
-}
-
 // ---- HSL → RGB helper for the hash-based fallback ----
 
 fn hsl_to_rgb(h: f32, s: f32, l: f32) -> Color {

@@ -26,18 +26,6 @@ pub fn set_text(text: &str) -> bool {
     }
 }
 
-pub fn with_clipboard_restore<F, R>(f: F) -> R
-where
-    F: FnOnce() -> R,
-{
-    let saved = get_text();
-    let result = f();
-    if let Some(text) = saved {
-        set_text(&text);
-    }
-    result
-}
-
 unsafe fn read_clipboard_text() -> Option<String> {
     let handle = unsafe { GetClipboardData(CF_UNICODETEXT.0 as u32).ok()? };
     let hmem = HGLOBAL(handle.0);
