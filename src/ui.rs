@@ -19,6 +19,7 @@ use windows::core::w;
 const ID_SAVE: u16 = 2001;
 const ID_CANCEL: u16 = 2002;
 const ID_AUTOSTART: u16 = 2003;
+const ID_USE_UIA: u16 = 2004;
 const ID_CONVERSION_HOTKEY: u16 = 2100;
 const ID_WORD_HOTKEY: u16 = 2101;
 const ID_LAYOUT_HOTKEY_BASE: u16 = 3000;
@@ -82,7 +83,9 @@ fn create_settings_window() {
         RegisterClassW(&wc);
 
         let num_layouts = installed.len();
-        let window_height = 190 + (num_layouts as i32 * 30) + 60;
+        // Base = 190 (title + conversion section) + 60 (autostart + buttons)
+        // + 46 (UIA checkbox + caption) + per-layout rows.
+        let window_height = 190 + (num_layouts as i32 * 30) + 60 + 46;
 
         let hwnd = CreateWindowExW(
             Default::default(),
@@ -175,7 +178,30 @@ fn create_settings_window() {
             config.general.autostart,
             font.0,
         );
-        y += 35;
+        y += 25;
+
+        create_checkbox(
+            hwnd,
+            "Use UI Automation for reading selections",
+            20,
+            y,
+            330,
+            20,
+            ID_USE_UIA,
+            config.general.use_uia,
+            font.0,
+        );
+        y += 18;
+        create_label(
+            hwnd,
+            "(uncheck if switching behaves oddly in some program)",
+            20,
+            y,
+            370,
+            16,
+            font.0,
+        );
+        y += 28;
 
         create_button(hwnd, "Save", 200, y, 90, 28, ID_SAVE, font.0);
         create_button(hwnd, "Cancel", 300, y, 90, 28, ID_CANCEL, font.0);
@@ -814,6 +840,10 @@ fn save_settings(hwnd: HWND) {
     let autostart_hwnd = unsafe { GetDlgItem(Some(hwnd), ID_AUTOSTART as i32) }.unwrap();
     let checked = unsafe { SendMessageW(autostart_hwnd, BM_GETCHECK_MSG, None, None) };
     s.config.general.autostart = checked.0 == BST_CHECKED_VAL as isize;
+
+    let use_uia_hwnd = unsafe { GetDlgItem(Some(hwnd), ID_USE_UIA as i32) }.unwrap();
+    let use_uia_checked = unsafe { SendMessageW(use_uia_hwnd, BM_GETCHECK_MSG, None, None) };
+    s.config.general.use_uia = use_uia_checked.0 == BST_CHECKED_VAL as isize;
 
     match s.config.save() {
         Ok(_) => {

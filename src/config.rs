@@ -25,6 +25,11 @@ pub struct GeneralConfig {
     pub autostart: bool,
     #[serde(default = "default_autostart_scope")]
     pub autostart_scope: String,
+    /// If true, try reading the user's selection via UI Automation first,
+    /// falling back to the old clipboard+Ctrl+C path when UIA isn't available.
+    /// Disable if a particular program misbehaves with UIA-based reads.
+    #[serde(default = "default_use_uia")]
+    pub use_uia: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -41,6 +46,10 @@ fn default_autostart_scope() -> String {
     "user".to_string()
 }
 
+fn default_use_uia() -> bool {
+    true
+}
+
 fn default_conversion_hotkey() -> String {
     "Pause".to_string()
 }
@@ -54,6 +63,7 @@ impl Default for GeneralConfig {
         Self {
             autostart: false,
             autostart_scope: default_autostart_scope(),
+            use_uia: default_use_uia(),
         }
     }
 }

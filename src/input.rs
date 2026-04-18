@@ -16,6 +16,61 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_INSERT, VK_LEFT, VK_NEXT, VK_PRIOR, VK_RIGHT, VK_SHIFT, VK_UP, VK_V,
 };
 
+/// Sends Shift+Home — selects from cursor to line start. Used by the
+/// fallback word-conversion path when UIA isn't available.
+pub fn send_select_to_line_start() {
+    let shift_held = hooks::user_holds_shift();
+    let ctrl_held = hooks::user_holds_ctrl();
+
+    let mut inputs: Vec<INPUT> = Vec::with_capacity(6);
+    // Ctrl+Shift+Home jumps to document start; we only want line start.
+    if ctrl_held {
+        inputs.push(key_up(VK_CONTROL));
+    }
+    if !shift_held {
+        inputs.push(key_down(VK_SHIFT));
+    }
+    inputs.push(key_down(VK_HOME));
+    inputs.push(key_up(VK_HOME));
+    if !shift_held {
+        inputs.push(key_up(VK_SHIFT));
+    }
+    if ctrl_held {
+        inputs.push(key_down(VK_CONTROL));
+    }
+    dispatch(&inputs);
+}
+
+/// Sends Shift+Right × count. When the current selection anchor is on the
+/// right (as after Shift+Home or Shift+Left), this shrinks the selection
+/// from the left by `count` characters.
+pub fn send_select_n_right(count: usize) {
+    if count == 0 {
+        return;
+    }
+    let ctrl_held = hooks::user_holds_ctrl();
+    let shift_held = hooks::user_holds_shift();
+
+    let mut inputs: Vec<INPUT> = Vec::with_capacity(count * 2 + 4);
+    if ctrl_held {
+        inputs.push(key_up(VK_CONTROL));
+    }
+    if !shift_held {
+        inputs.push(key_down(VK_SHIFT));
+    }
+    for _ in 0..count {
+        inputs.push(key_down(VK_RIGHT));
+        inputs.push(key_up(VK_RIGHT));
+    }
+    if !shift_held {
+        inputs.push(key_up(VK_SHIFT));
+    }
+    if ctrl_held {
+        inputs.push(key_down(VK_CONTROL));
+    }
+    dispatch(&inputs);
+}
+
 /// Returns true if the given virtual key is an "extended key" in Win32 terms.
 /// Extended keys (arrows, navigation) need the KEYEVENTF_EXTENDEDKEY flag
 /// in SendInput, otherwise they get interpreted as numpad equivalents.
@@ -96,30 +151,6 @@ pub fn send_copy() {
 /// Simulates Ctrl+V.
 pub fn send_paste() {
     send_ctrl_key(VK_V);
-}
-
-/// Simulates Ctrl+Shift+Left — selects the word to the left of the cursor.
-/// Preserves the user's physical Ctrl/Shift state.
-pub fn send_select_word_left() {
-    let ctrl_held = hooks::user_holds_ctrl();
-    let shift_held = hooks::user_holds_shift();
-
-    let mut inputs: Vec<INPUT> = Vec::with_capacity(6);
-    if !ctrl_held {
-        inputs.push(key_down(VK_CONTROL));
-    }
-    if !shift_held {
-        inputs.push(key_down(VK_SHIFT));
-    }
-    inputs.push(key_down(VK_LEFT));
-    inputs.push(key_up(VK_LEFT));
-    if !shift_held {
-        inputs.push(key_up(VK_SHIFT));
-    }
-    if !ctrl_held {
-        inputs.push(key_up(VK_CONTROL));
-    }
-    dispatch(&inputs);
 }
 
 /// Selects N characters to the left of the cursor by sending Shift+Left × N.
