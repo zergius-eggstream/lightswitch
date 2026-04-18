@@ -61,13 +61,7 @@ pub fn rebuild(installed: &[HklId]) {
     // Phase 1: probe each layout
     let mut layout_maps: HashMap<HklId, LayoutMap> = HashMap::new();
     for &hkl in installed {
-        let map = probe_layout(hkl);
-        crate::logger::log(&format!(
-            "[tables] probed HKL 0x{:08X}: {} key positions",
-            hkl,
-            map.len()
-        ));
-        layout_maps.insert(hkl, map);
+        layout_maps.insert(hkl, probe_layout(hkl));
     }
 
     // Phase 2: char sets
@@ -89,12 +83,6 @@ pub fn rebuild(installed: &[HklId]) {
             })
             .copied()
             .collect();
-        crate::logger::log(&format!(
-            "[tables] HKL 0x{:08X}: {} total chars, {} exclusive",
-            hkl,
-            chars.len(),
-            exclusive.len()
-        ));
         exclusive_chars.insert(hkl, exclusive);
     }
 
@@ -153,14 +141,6 @@ pub fn detect_source_layout(text: &str) -> Option<HklId> {
             }
         }
     }
-
-    crate::logger::log(&format!(
-        "[tables] detect: scores={:?}",
-        scores
-            .iter()
-            .map(|(h, s)| format!("0x{:08X}={}", h, s))
-            .collect::<Vec<_>>()
-    ));
 
     scores
         .into_iter()

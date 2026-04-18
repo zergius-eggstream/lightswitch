@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  # Keep build output tight; rust-cache handles the bulk of repeat work.
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  build:
+    name: Build and lint (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry and build
+        uses: Swatinem/rust-cache@v2
+
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        run: cargo clippy --release --all-targets -- -D warnings
+
+      - name: cargo build --release
+        run: cargo build --release
+
+      - name: Upload release binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: lightswitch-${{ github.sha }}
+          path: target/release/lightswitch.exe
+          if-no-files-found: error
+          retention-days: 14

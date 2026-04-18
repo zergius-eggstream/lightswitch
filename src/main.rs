@@ -33,6 +33,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 const WM_TRAY_ICON: u32 = WM_USER + 1;
 const IDM_SETTINGS: u16 = 1001;
 const IDM_EXIT: u16 = 1002;
+const IDM_ABOUT: u16 = 1003;
 const TIMER_LAYOUT_POLL: usize = 1;
 const TIMER_LAYOUT_POLL_MS: u32 = 500;
 
@@ -231,12 +232,14 @@ fn remove_tray_icon(hwnd: HWND) {
 fn show_tray_context_menu(hwnd: HWND) {
     use windows::Win32::UI::WindowsAndMessaging::{
         AppendMenuW, CreatePopupMenu, GetCursorPos, SetForegroundWindow, TrackPopupMenu,
-        MF_STRING, TPM_BOTTOMALIGN, TPM_LEFTALIGN,
+        MF_SEPARATOR, MF_STRING, TPM_BOTTOMALIGN, TPM_LEFTALIGN,
     };
 
     unsafe {
         let menu = CreatePopupMenu().unwrap();
         AppendMenuW(menu, MF_STRING, IDM_SETTINGS as usize, w!("Settings...")).unwrap();
+        AppendMenuW(menu, MF_STRING, IDM_ABOUT as usize, w!("About...")).unwrap();
+        AppendMenuW(menu, MF_SEPARATOR, 0, None).unwrap();
         AppendMenuW(menu, MF_STRING, IDM_EXIT as usize, w!("Exit")).unwrap();
 
         let mut pt = Default::default();
@@ -244,6 +247,57 @@ fn show_tray_context_menu(hwnd: HWND) {
 
         let _ = SetForegroundWindow(hwnd);
         let _ = TrackPopupMenu(menu, TPM_LEFTALIGN | TPM_BOTTOMALIGN, pt.x, pt.y, Some(0), hwnd, None);
+    }
+}
+
+fn show_about_dialog(hwnd: HWND) {
+    use windows::Win32::UI::Shell::ShellExecuteW;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        MessageBoxW, IDYES, MB_ICONINFORMATION, MB_YESNO, SW_SHOWNORMAL,
+    };
+
+    const REPO_URL: &str = "https://github.com/zergius-eggstream/lightswitch";
+
+    let text = format!(
+        "LightSwitch v{}\n\n\
+         Lightweight keyboard layout switcher with text conversion.\n\n\
+         Built: {}\n\n\
+         Licensed under MIT.\n\
+         © 2026 zergius-eggstream and LightSwitch contributors.\n\n\
+         {}\n\n\
+         Open the project page in your browser?",
+        env!("CARGO_PKG_VERSION"),
+        env!("BUILD_TIMESTAMP"),
+        REPO_URL,
+    );
+    let text_wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+    let title_wide: Vec<u16> = "About LightSwitch"
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+
+    let result = unsafe {
+        MessageBoxW(
+            Some(hwnd),
+            windows::core::PCWSTR(text_wide.as_ptr()),
+            windows::core::PCWSTR(title_wide.as_ptr()),
+            MB_YESNO | MB_ICONINFORMATION,
+        )
+    };
+
+    if result == IDYES {
+        let url_wide: Vec<u16> = REPO_URL.encode_utf16().chain(std::iter::once(0)).collect();
+        let verb_wide: Vec<u16> = "open".encode_utf16().chain(std::iter::once(0)).collect();
+        unsafe {
+            ShellExecuteW(
+                Some(hwnd),
+                windows::core::PCWSTR(verb_wide.as_ptr()),
+                windows::core::PCWSTR(url_wide.as_ptr()),
+                windows::core::PCWSTR::null(),
+                windows::core::PCWSTR::null(),
+                SW_SHOWNORMAL,
+            );
+        }
     }
 }
 
@@ -316,6 +370,9 @@ unsafe fn wnd_proc_inner(
             match id {
                 IDM_SETTINGS => {
                     ui::show_settings();
+                }
+                IDM_ABOUT => {
+                    show_about_dialog(hwnd);
                 }
                 IDM_EXIT => {
                     unsafe { DestroyWindow(hwnd).unwrap() };

@@ -35,8 +35,6 @@ pub fn convert_cyclic(text: &str, current_layout: HklId, layout_order: &[HklId])
 /// of the current line. Workaround: always make a real selection. Proper
 /// fix planned via UI Automation (Stage 8).
 pub fn perform_conversion() {
-    log!("[full] perform_conversion start");
-
     let saved_clipboard = clipboard::get_text();
     clipboard::set_text("");
     std::thread::sleep(std::time::Duration::from_millis(30));
@@ -45,7 +43,6 @@ pub fn perform_conversion() {
     std::thread::sleep(std::time::Duration::from_millis(80));
 
     let text = clipboard::get_text().unwrap_or_default();
-    log!("[full] after copy: {} chars", text.len());
     if text.is_empty() {
         restore_clipboard(saved_clipboard);
         return;
@@ -68,8 +65,6 @@ pub fn perform_conversion() {
 /// Performs single-word conversion: selects the word to the left of the cursor
 /// (Ctrl+Shift+Left), converts it, pastes back.
 pub fn perform_word_conversion() {
-    log!("[word] perform_word_conversion start");
-
     let saved_clipboard = clipboard::get_text();
     clipboard::set_text("");
     std::thread::sleep(std::time::Duration::from_millis(30));
@@ -81,7 +76,6 @@ pub fn perform_word_conversion() {
     std::thread::sleep(std::time::Duration::from_millis(80));
 
     let text = clipboard::get_text().unwrap_or_default();
-    log!("[word] after copy: {} chars", text.len());
     if text.is_empty() {
         restore_clipboard(saved_clipboard);
         return;
