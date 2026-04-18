@@ -32,16 +32,15 @@ Existing alternatives are either bloated keyloggers, abandoned, or feature-incom
 
 **Pre-release / MVP in development.** Core functionality works but the project is not yet ready for general use.
 
-Currently supports: English (US), Russian, Ukrainian standard layouts. Other languages and layout variants planned via dynamic conversion tables (`ToUnicodeEx`).
+Supports any keyboard layout installed in Windows — conversion tables are built dynamically at startup via `ToUnicodeEx`, so English, Russian, Ukrainian, Polish, German, Arabic, etc. all work out of the box. Multiple variants of the same language (e.g. Russian standard vs. Russian Typewriter) are distinguished by their full HKL.
 
 See [docs/technical-specification.md](docs/technical-specification.md) for the full spec and roadmap.
 
 ## Known limitations
 
-- **Smart-copy editors and the "convert selection" hotkey.** In editors with "smart copy" — Notepad on Windows 11, VS Code, many Electron apps — pressing `Ctrl+C` without an explicit text selection copies the current line. LightSwitch can't distinguish this from a real one-line selection without higher-level APIs, so triggering the conversion hotkey with no explicit selection in such editors will incorrectly append a converted copy of the current line. **Workaround:** always make a real selection before pressing the conversion hotkey. A proper fix is planned via UI Automation integration (Stage 8 of the roadmap).
-- Russian typewriter and other secondary layouts for the same language are not distinguished — only the primary `lang_id` is used. Planned for Stage 6.
-- RAlt (AltGr), Win, and Fn keys cannot be used as hotkeys.
-- No UAC elevation option for capturing keys in admin-level windows.
+- **Apps without UI Automation support** fall back to a clipboard-based flow. This flow can't read the caret position without selecting something first, so in editors with "smart copy" (e.g. Notepad++) pressing the "convert selection" hotkey with nothing explicitly selected may behave unexpectedly. **Workaround:** select the text explicitly before triggering conversion, or keep "Use UI Automation" enabled in settings (default) — most modern editors (Notepad on Win11, Word, VS Code, Chrome, Edge, most Electron apps) expose UIA and aren't affected.
+- **RAlt (AltGr), Win, and Fn keys** cannot be used as hotkeys.
+- **No UAC elevation option** for capturing keys in admin-level windows.
 
 ## Building from source
 
