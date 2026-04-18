@@ -28,6 +28,8 @@ features = [
     "Win32_UI_TextServices",       # GetForegroundWindow thread layout
     "Win32_UI_Controls",           # DRAWITEMSTRUCT, ODS_FOCUS
     "Win32_UI_Controls_Dialogs",   # ChooseColorW
+    "Win32_UI_Accessibility",      # IUIAutomation / TextPattern (Stage 8)
+    "Win32_System_Com",            # CoInitializeEx / CoUninitialize / CoCreateInstance
 ]
 
 [dependencies]
