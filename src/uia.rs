@@ -25,7 +25,8 @@ use windows::Win32::System::Com::{
 };
 use windows::Win32::UI::Accessibility::{
     CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationTextPattern,
-    IUIAutomationTextRange, TextUnit_Word, UIA_TextPatternId,
+    IUIAutomationTextRange, TextPatternRangeEndpoint_End, TextPatternRangeEndpoint_Start,
+    TextUnit_Character, TextUnit_Line, UIA_TextPatternId,
 };
 use windows::core::Interface;
 
@@ -137,32 +138,99 @@ pub fn get_selected_text() -> Option<String> {
     }
 }
 
-/// Selects and returns the word surrounding the caret. The selection is
-/// actually performed via UIA `Select()` so the subsequent paste replaces
-/// just that word.
+/// Selects and returns the "word" surrounding the caret, where "word" is
+/// defined as a maximal run of **non-whitespace** characters. This is
+/// intentionally different from UIA's `TextUnit_Word`, because UIA's
+/// definition:
+///
+/// 1. Splits on punctuation — so `ghb,jh` is two UIA-words (`ghb` and
+///    `jh`), which breaks cyclic conversion: the second hotkey press
+///    only re-converts one half.
+/// 2. In some apps (Notepad Win11, Word) includes the **trailing
+///    whitespace** in the word range, so after pasting the replacement
+///    the caret lands past the space — the next cycle then selects the
+///    next word, not the one we just converted.
+///
+/// Our definition is whitespace-delimited: we grab the enclosing line
+/// via UIA, locate the caret column by reading the prefix text from
+/// line-start to caret, and in Rust walk outward from that column until
+/// we hit whitespace on each side. Then we move the range endpoints to
+/// exactly that span. Result: `ghb,jh` is one unit, trailing spaces are
+/// excluded, cycling works.
 ///
 /// Returns `None` if UIA isn't available, the focused element doesn't
-/// implement `TextPattern`, or there's no word-shaped range at the caret.
+/// implement `TextPattern`, or the caret is on whitespace.
 pub fn select_word_at_caret() -> Option<String> {
     let element = focused_element()?;
     let pattern = text_pattern(&element)?;
 
     unsafe {
-        // GetSelection returns either the real selection or a degenerate
-        // (zero-length) range at the caret. Either way, range[0] is a good
-        // starting point for ExpandToEnclosingUnit.
         let selection = pattern.GetSelection().ok()?;
         if selection.Length().ok()? == 0 {
             return None;
         }
-        let range = selection.GetElement(0).ok()?;
-        range.ExpandToEnclosingUnit(TextUnit_Word).ok()?;
-        range.Select().ok()?;
-        let text = range_text(&range)?;
-        if text.trim().is_empty() {
+        let caret_range = selection.GetElement(0).ok()?;
+
+        // Enclosing line: gives us the text surrounding the caret.
+        let line_range = caret_range.Clone().ok()?;
+        line_range.ExpandToEnclosingUnit(TextUnit_Line).ok()?;
+        let line_text = range_text(&line_range)?;
+
+        // Caret column (in characters) within the line: build a range from
+        // line-start to caret-start, read its text, count the chars.
+        let prefix_range = caret_range.Clone().ok()?;
+        prefix_range
+            .MoveEndpointByRange(
+                TextPatternRangeEndpoint_Start,
+                &line_range,
+                TextPatternRangeEndpoint_Start,
+            )
+            .ok()?;
+        let caret_col = range_text(&prefix_range)?.chars().count();
+
+        // Walk outward until whitespace / line boundary.
+        let chars: Vec<char> = line_text.chars().collect();
+        let mut start_col = caret_col;
+        let mut end_col = caret_col;
+        while start_col > 0 && !chars[start_col - 1].is_whitespace() {
+            start_col -= 1;
+        }
+        while end_col < chars.len() && !chars[end_col].is_whitespace() {
+            end_col += 1;
+        }
+        if start_col == end_col {
+            // Caret sits on whitespace — nothing to convert.
+            return None;
+        }
+
+        // Contract the line range to [start_col, end_col) in the line.
+        let word_range = line_range.Clone().ok()?;
+        if start_col > 0 {
+            word_range
+                .MoveEndpointByUnit(
+                    TextPatternRangeEndpoint_Start,
+                    TextUnit_Character,
+                    start_col as i32,
+                )
+                .ok()?;
+        }
+        let tail = chars.len() - end_col;
+        if tail > 0 {
+            word_range
+                .MoveEndpointByUnit(
+                    TextPatternRangeEndpoint_End,
+                    TextUnit_Character,
+                    -(tail as i32),
+                )
+                .ok()?;
+        }
+
+        word_range.Select().ok()?;
+        let word_text = range_text(&word_range)?;
+        if word_text.trim().is_empty() {
             None
         } else {
-            Some(text)
+            Some(word_text)
         }
     }
 }
