@@ -31,6 +31,7 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           mkdir -p dist
           cp target/release/lightswitch.exe "dist/lightswitch-${VERSION}.exe"
+          cp target/release/lightswitch.exe "dist/lightswitch.exe"
           ls -la dist/
 
       - name: Create GitHub Release
