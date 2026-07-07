@@ -4,7 +4,7 @@
 
 # LightSwitch
 
-A lightweight, fast, and reliable keyboard layout switcher for Windows with text conversion between layouts.
+A lightweight, fast, and reliable keyboard layout switcher for Windows with text conversion between layouts. A lightweight alternative to Punto Switcher, Key Switcher, or Caramba Switcher for Windows 10/11 written in Rust.
 
 Switch keyboard layouts with a single key tap (e.g. tap LCtrl for English, RCtrl for Ukrainian), and convert already-typed text from one layout to another with a hotkey — without losing the original clipboard.
 
